@@ -94,8 +94,10 @@ function startDiscovery() {
   });
 
   discoverySocket.on('message', (msg, rinfo) => {
+    console.log('[DISCOVERY] RAW UDP packet received from', rinfo.address + ':' + rinfo.port, 'size:', msg.length, 'bytes');
     try {
       const data = JSON.parse(msg.toString());
+      console.log('[DISCOVERY] Parsed message type:', data.t);
       if (data && data.t === 'announce' && data.roomId) {
         console.log('[DISCOVERY] announce received from', rinfo.address + ':' + rinfo.port, '- roomId:', data.roomId, 'name:', data.roomName, 'participants:', data.participants);
         // All peers receive all announcements via shared UDP listener
@@ -106,9 +108,12 @@ function startDiscovery() {
         }
         roomMap.set(data.roomId, { data, lastSeen: Date.now() });
         sendRoomsUpdate();
+      } else {
+        console.log('[DISCOVERY] Received non-announce message or invalid data');
       }
     } catch (e) {
       console.error('[DISCOVERY] Failed to parse message:', e.message);
+      console.error('[DISCOVERY] Raw message (first 100 chars):', msg.toString().substring(0, 100));
     }
   });
 
@@ -118,21 +123,37 @@ function startDiscovery() {
       const localIp = getLocalIp();
       console.log('[DISCOVERY] Binding to 0.0.0.0:' + MULTICAST_PORT + ' (local IP:', localIp + ')');
       
-      // Join multicast group
-      discoverySocket.addMembership(MULTICAST_ADDR);
+      // CRITICAL: Join multicast group on the SPECIFIC network interface
+      // When binding to 0.0.0.0, we must specify which interface to use for multicast
+      // This is often the issue - multicast membership needs the interface IP
+      try {
+        discoverySocket.addMembership(MULTICAST_ADDR, localIp);
+        console.log('[DISCOVERY] Joined multicast group', MULTICAST_ADDR, 'on interface', localIp);
+      } catch (e) {
+        // Fallback: try without specifying interface (may work on some systems)
+        console.log('[DISCOVERY] Failed to join with interface, trying without:', e.message);
+        try {
+          discoverySocket.addMembership(MULTICAST_ADDR);
+          console.log('[DISCOVERY] Joined multicast group', MULTICAST_ADDR, 'without interface spec');
+        } catch (e2) {
+          throw e2;
+        }
+      }
       
       // Enable loopback so sender also receives (useful for testing)
       discoverySocket.setMulticastLoopback(true);
+      console.log('[DISCOVERY] Multicast loopback enabled');
       
       // Set TTL for multicast packets (1 = local network only)
       discoverySocket.setMulticastTTL(1);
+      console.log('[DISCOVERY] Multicast TTL set to 1 (local network)');
       
-      // Try to set multicast interface to local IP (optional, may fail on some systems)
+      // Set multicast interface for sending (should match the interface we joined on)
       try {
         discoverySocket.setMulticastInterface(localIp);
-        console.log('[DISCOVERY] Multicast interface set to', localIp);
+        console.log('[DISCOVERY] Multicast send interface set to', localIp);
       } catch (e) {
-        console.log('[DISCOVERY] Could not set multicast interface (this is usually OK):', e.message);
+        console.log('[DISCOVERY] Could not set multicast send interface (may still work):', e.message);
       }
       
       console.log('[DISCOVERY] Successfully joined multicast group', MULTICAST_ADDR);
@@ -152,6 +173,23 @@ function startDiscovery() {
     const address = discoverySocket.address();
     console.log('[DISCOVERY] Socket listening on', address.address + ':' + address.port);
     console.log('[DISCOVERY] Ready to receive multicast packets');
+    
+    // Test: Send a test packet to ourselves to verify socket is working
+    // This will only work if loopback is enabled
+    setTimeout(() => {
+      const testMsg = Buffer.from(JSON.stringify({ t: 'test', ts: Date.now() }));
+      try {
+        discoverySocket.send(testMsg, 0, testMsg.length, MULTICAST_PORT, MULTICAST_ADDR, (err) => {
+          if (err) {
+            console.log('[DISCOVERY] Test send failed (this is OK if firewall blocks):', err.message);
+          } else {
+            console.log('[DISCOVERY] Test packet sent - if loopback works, you should see it received');
+          }
+        });
+      } catch (e) {
+        console.log('[DISCOVERY] Test send exception:', e.message);
+      }
+    }, 1000);
   });
 
   if (!pruneInterval) {
