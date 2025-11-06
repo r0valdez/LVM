@@ -13,8 +13,10 @@ export class SignalingClient {
     return new Promise((resolve, reject) => {
       const ws = new WebSocket(this.url);
       this.ws = ws;
+      log('[SIGNAL][renderer] connecting', this.url);
 
       ws.onopen = () => {
+        log('[SIGNAL][renderer] open, sending join');
         ws.send(JSON.stringify({ t: 'join', clientId: this.clientId, name: this.name }));
       };
 
@@ -23,6 +25,7 @@ export class SignalingClient {
         try { msg = JSON.parse(ev.data); } catch { return; }
         const t = msg.t;
         if (!t) return;
+        log('[SIGNAL][renderer] message', t, msg);
         if (t === 'welcome') {
           this.handlers.onWelcome && this.handlers.onWelcome(msg);
           resolve();
@@ -38,10 +41,11 @@ export class SignalingClient {
       };
 
       ws.onerror = (e) => {
-        log('WS error', e);
+        log('[SIGNAL][renderer] error', e);
       };
 
       ws.onclose = () => {
+        log('[SIGNAL][renderer] closed');
         this.handlers.onClosed && this.handlers.onClosed();
       };
     });
@@ -49,6 +53,7 @@ export class SignalingClient {
 
   send(msg) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      log('[SIGNAL][renderer] send', msg.t);
       this.ws.send(JSON.stringify(msg));
     }
   }

@@ -36,8 +36,10 @@ function createWindow() {
   });
 
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+  console.log('[MAIN] BrowserWindow created and index.html loaded');
 
   mainWindow.on('closed', () => {
+    console.log('[MAIN] Main window closed');
     mainWindow = null;
   });
 }
@@ -81,6 +83,7 @@ function sendRoomsUpdate() {
 function startDiscovery() {
   if (discoverySocket) return;
   discoverySocket = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+  console.log('[DISCOVERY] UDP socket created');
 
   discoverySocket.on('error', (err) => {
     console.error('UDP discovery error:', err);
@@ -90,6 +93,7 @@ function startDiscovery() {
     try {
       const data = JSON.parse(msg.toString());
       if (data && data.t === 'announce' && data.roomId) {
+        console.log('[DISCOVERY] announce received', data.roomId, data.roomName, `${data.hostIp}:${data.wsPort}`, 'participants:', data.participants);
         // Ignore our own announcements
         if (isHosting && hostInfo && data.roomId === hostInfo.roomId) return;
         roomMap.set(data.roomId, { data, lastSeen: Date.now() });
@@ -104,6 +108,7 @@ function startDiscovery() {
     try {
       discoverySocket.addMembership(MULTICAST_ADDR);
       discoverySocket.setMulticastLoopback(true);
+      console.log('[DISCOVERY] Bound on', MULTICAST_PORT, 'and joined group', MULTICAST_ADDR);
     } catch (e) {
       console.error('Failed to join multicast group:', e);
     }
@@ -115,6 +120,7 @@ function startDiscovery() {
       let changed = false;
       for (const [roomId, rec] of roomMap.entries()) {
         if (now - rec.lastSeen > 6000) {
+          console.log('[DISCOVERY] pruning stale room', roomId);
           roomMap.delete(roomId);
           changed = true;
         }
@@ -154,10 +160,13 @@ function startAnnouncing(roomId, roomName, wsPort) {
     const buf = Buffer.from(payload);
     try {
       discoverySocket.send(buf, 0, buf.length, MULTICAST_PORT, MULTICAST_ADDR);
+      // Throttle logs to avoid spam: log every tick
+      console.log('[ANNOUNCE] roomId:', roomId, 'name:', roomName, 'at', `${ip}:${wsPort}`, 'participants:', participants);
     } catch (e) {
       // ignore transient send errors
     }
   }, 2000);
+  console.log('[ANNOUNCE] started for room', roomId, 'on', `${ip}:${wsPort}`);
 }
 
 function stopAnnouncing() {
@@ -171,8 +180,10 @@ function stopAnnouncing() {
 function startWsServer(port) {
   if (wsServer) return wsServer;
   wsServer = new WebSocket.Server({ port });
+  console.log('[WS] Server started on port', port);
 
   wsServer.on('connection', (socket) => {
+    console.log('[WS] New connection');
     let thisClientId = null;
 
     socket.on('message', (raw) => {
@@ -191,6 +202,7 @@ function startWsServer(port) {
         thisClientId = clientId;
         clientIdToSocket.set(clientId, socket);
         clientIdToInfo.set(clientId, { name: name || 'Guest' });
+        console.log('[WS] join from', clientId, name);
 
         // Send welcome with existing participants
         const participants = Array.from(clientIdToInfo.entries())
@@ -208,6 +220,7 @@ function startWsServer(port) {
         // Announcement will pick up new count automatically
       } else if (t === 'leave') {
         if (!thisClientId) return;
+        console.log('[WS] leave from', thisClientId);
         handleClientLeave(thisClientId);
       } else if (t === 'offer' || t === 'answer' || t === 'ice') {
         const { to } = msg;
@@ -215,11 +228,15 @@ function startWsServer(port) {
         const target = clientIdToSocket.get(to);
         if (target) {
           try { target.send(JSON.stringify(msg)); } catch {}
+          if (t === 'offer') console.log('[WS] relayed offer', 'from', msg.from, 'to', to);
+          if (t === 'answer') console.log('[WS] relayed answer', 'from', msg.from, 'to', to);
+          if (t === 'ice') console.log('[WS] relayed ice', 'from', msg.from, 'to', to);
         }
       }
     });
 
     socket.on('close', () => {
+      console.log('[WS] socket closed for', thisClientId);
       if (thisClientId) handleClientLeave(thisClientId);
     });
   });
@@ -228,6 +245,7 @@ function startWsServer(port) {
 }
 
 function handleClientLeave(clientId) {
+  console.log('[WS] handling client leave', clientId);
   clientIdToSocket.delete(clientId);
   const info = clientIdToInfo.get(clientId);
   clientIdToInfo.delete(clientId);
@@ -239,6 +257,7 @@ function handleClientLeave(clientId) {
 
 function stopWsServer(broadcastEnd) {
   if (!wsServer) return;
+  console.log('[WS] stopping server. broadcastEnd =', !!broadcastEnd);
   if (broadcastEnd) {
     const msg = JSON.stringify({ t: 'end' });
     for (const [, ws] of clientIdToSocket.entries()) {
@@ -258,16 +277,19 @@ ipcMain.handle('sys:get-local-ip', () => getLocalIp());
 ipcMain.handle('host:start', (e, { roomId, roomName, wsPort }) => {
   if (isHosting) return { ok: false, error: 'already-hosting' };
   try {
+    console.log('[IPC] host:start', roomId, roomName, wsPort);
     startWsServer(wsPort || DEFAULT_WS_PORT);
     startAnnouncing(roomId, roomName, wsPort || DEFAULT_WS_PORT);
     isHosting = true;
     return { ok: true, hostIp: getLocalIp(), wsPort: wsPort || DEFAULT_WS_PORT };
   } catch (e2) {
+    console.error('[IPC] host:start failed', e2);
     return { ok: false, error: e2 && e2.message ? e2.message : 'host-start-failed' };
   }
 });
 
 ipcMain.handle('host:stop', () => {
+  console.log('[IPC] host:stop');
   if (!isHosting) return { ok: true };
   stopAnnouncing();
   stopWsServer(true);
@@ -278,6 +300,7 @@ ipcMain.handle('host:stop', () => {
 app.whenReady().then(() => {
   createWindow();
   startDiscovery();
+  console.log('[APP] ready');
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -285,6 +308,7 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
+  console.log('[APP] window-all-closed');
   stopAnnouncing();
   stopWsServer(false);
   stopDiscovery();

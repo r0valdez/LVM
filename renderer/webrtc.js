@@ -12,6 +12,7 @@ export class WebRTCManager {
   async initLocal(clientId) {
     this.clientId = clientId;
     if (!this.localStream) {
+      log('[WEBRTC][renderer] initLocal getUserMedia');
       this.localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       const vid = document.createElement('video');
       vid.autoplay = true;
@@ -21,6 +22,7 @@ export class WebRTCManager {
       vid.dataset.peer = 'self';
       this.gridEl.prepend(vid);
       this.selfVideo = vid;
+      log('[WEBRTC][renderer] local stream ready');
     }
   }
 
@@ -39,6 +41,7 @@ export class WebRTCManager {
     };
 
     pc.ontrack = (e) => {
+      log('[WEBRTC][renderer] ontrack from', peerId);
       let videoEl = this.peers.get(peerId)?.videoEl;
       if (!videoEl) {
         videoEl = document.createElement('video');
@@ -55,6 +58,7 @@ export class WebRTCManager {
 
     pc.onconnectionstatechange = () => {
       const st = pc.connectionState;
+      log('[WEBRTC][renderer] connection state', peerId, st);
       if (st === 'failed' || st === 'closed' || st === 'disconnected') {
         this.removePeer(peerId);
       }
@@ -65,6 +69,7 @@ export class WebRTCManager {
   }
 
   async createOfferTo(peerId, onSignal) {
+    log('[WEBRTC][renderer] createOfferTo', peerId);
     const pc = this._ensurePeer(peerId, onSignal);
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
@@ -72,6 +77,7 @@ export class WebRTCManager {
   }
 
   async handleOffer(fromPeerId, sdp, onSignal) {
+    log('[WEBRTC][renderer] handleOffer from', fromPeerId);
     const pc = this._ensurePeer(fromPeerId, onSignal);
     await pc.setRemoteDescription(new RTCSessionDescription(sdp));
     const answer = await pc.createAnswer();
@@ -80,12 +86,14 @@ export class WebRTCManager {
   }
 
   async handleAnswer(fromPeerId, sdp) {
+    log('[WEBRTC][renderer] handleAnswer from', fromPeerId);
     const rec = this.peers.get(fromPeerId);
     if (!rec) return;
     await rec.pc.setRemoteDescription(new RTCSessionDescription(sdp));
   }
 
   async handleIce(fromPeerId, candidate) {
+    log('[WEBRTC][renderer] handleIce from', fromPeerId);
     const rec = this.peers.get(fromPeerId);
     if (!rec) return;
     try { await rec.pc.addIceCandidate(new RTCIceCandidate(candidate)); } catch {}
@@ -100,6 +108,7 @@ export class WebRTCManager {
   }
 
   removePeer(peerId) {
+    log('[WEBRTC][renderer] removePeer', peerId);
     const rec = this.peers.get(peerId);
     if (!rec) return;
     try { rec.pc.close(); } catch {}
@@ -108,6 +117,7 @@ export class WebRTCManager {
   }
 
   cleanup() {
+    log('[WEBRTC][renderer] cleanup');
     for (const [peerId] of this.peers) this.removePeer(peerId);
     if (this.selfVideo && this.selfVideo.parentNode) this.selfVideo.parentNode.removeChild(this.selfVideo);
     this.selfVideo = null;

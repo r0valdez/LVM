@@ -7,6 +7,7 @@ class DiscoveryController {
     this.hosting = null; // { roomId, wsPort }
 
     window.lan.onRoomsUpdate((rooms) => {
+      log('[DISCOVERY][renderer] rooms-update received', rooms?.length || 0);
       const changed = this._updateRooms(rooms);
       if (changed) this._emit();
     });
@@ -35,6 +36,7 @@ class DiscoveryController {
   }
 
   _emit() {
+    log('[DISCOVERY][renderer] emit rooms', this.rooms.size);
     const list = Array.from(this.rooms.values());
     for (const cb of this.callbacks) {
       try { cb(list); } catch {}
@@ -45,6 +47,7 @@ class DiscoveryController {
     if (this.hosting) return this.hosting;
     const roomId = uuidv4();
     const roomName = await getDefaultRoomName();
+    log('[DISCOVERY][renderer] startHosting', roomId, roomName, preferredPort);
     const res = await window.lan.hostStart(roomId, roomName, preferredPort);
     if (!res || !res.ok) throw new Error(res && res.error || 'Failed to host');
     this.hosting = { roomId, wsPort: res.wsPort, roomName };
@@ -54,6 +57,7 @@ class DiscoveryController {
 
   async stopHosting() {
     if (!this.hosting) return;
+    log('[DISCOVERY][renderer] stopHosting');
     await window.lan.hostStop();
     log('Hosting stopped');
     this.hosting = null;
