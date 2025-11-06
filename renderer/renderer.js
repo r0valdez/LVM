@@ -72,17 +72,34 @@ async function onCreateRoom() {
     handlers: {
       onWelcome: async ({ participants }) => {
         log('[FLOW][renderer][HOST] onWelcome participants', participants.length);
-        // Host creates offers to existing participants
+        // Host creates offers to existing participants (host is always the offerer)
         for (const p of participants) {
-          const offer = await rtc.createOfferTo(p.clientId, (candidate) => signaling.sendIce(p.clientId, candidate));
-          signaling.sendOffer(p.clientId, offer);
+          // Only create offer if we don't already have a connection to this peer
+          if (!rtc.hasPeer(p.clientId)) {
+            try {
+              const offer = await rtc.createOfferTo(p.clientId, (candidate) => signaling.sendIce(p.clientId, candidate));
+              if (offer) {
+                signaling.sendOffer(p.clientId, offer);
+              }
+            } catch (e) {
+              log('[FLOW][renderer][HOST] Error creating offer to', p.clientId, ':', e.message);
+            }
+          }
         }
       },
       onPeerJoined: async ({ clientId: peerId }) => {
         log('[FLOW][renderer][HOST] onPeerJoined', peerId);
-        // When new peer joins, host creates offer to them
-        const offer = await rtc.createOfferTo(peerId, (candidate) => signaling.sendIce(peerId, candidate));
-        signaling.sendOffer(peerId, offer);
+        // When new peer joins, host creates offer to them (host is always the offerer)
+        if (!rtc.hasPeer(peerId)) {
+          try {
+            const offer = await rtc.createOfferTo(peerId, (candidate) => signaling.sendIce(peerId, candidate));
+            if (offer) {
+              signaling.sendOffer(peerId, offer);
+            }
+          } catch (e) {
+            log('[FLOW][renderer][HOST] Error creating offer to', peerId, ':', e.message);
+          }
+        }
       },
       onPeerLeft: ({ clientId: peerId }) => {
         log('[FLOW][renderer][HOST] onPeerLeft', peerId);
@@ -92,11 +109,21 @@ async function onCreateRoom() {
         const from = msg.from;
         if (msg.t === 'offer') {
           log('[FLOW][renderer][HOST] recv offer from', from);
-          const answer = await rtc.handleOffer(from, msg.sdp, (candidate) => signaling.sendIce(from, candidate));
-          signaling.sendAnswer(from, answer);
+          try {
+            const answer = await rtc.handleOffer(from, msg.sdp, (candidate) => signaling.sendIce(from, candidate));
+            if (answer) {
+              signaling.sendAnswer(from, answer);
+            }
+          } catch (e) {
+            log('[FLOW][renderer][HOST] Error handling offer from', from, ':', e.message);
+          }
         } else if (msg.t === 'answer') {
           log('[FLOW][renderer][HOST] recv answer from', from);
-          await rtc.handleAnswer(from, msg.sdp);
+          try {
+            await rtc.handleAnswer(from, msg.sdp);
+          } catch (e) {
+            log('[FLOW][renderer][HOST] Error handling answer from', from, ':', e.message);
+          }
         } else if (msg.t === 'ice') {
           log('[FLOW][renderer][HOST] recv ice from', from);
           await rtc.handleIce(from, msg.candidate);
@@ -146,16 +173,14 @@ async function joinRoom(room) {
     handlers: {
       onWelcome: async ({ participants }) => {
         log('[FLOW][renderer] onWelcome participants', participants.length);
-        // Create offers to existing participants
-        for (const p of participants) {
-          const offer = await rtc.createOfferTo(p.clientId, (candidate) => signaling.sendIce(p.clientId, candidate));
-          signaling.sendOffer(p.clientId, offer);
-        }
+        // Peer waits for host to create offers - don't create offers here
+        // The host will create offers, and we'll answer them
+        log('[FLOW][renderer] Waiting for host to initiate WebRTC connection');
       },
       onPeerJoined: async ({ clientId: peerId }) => {
         log('[FLOW][renderer] onPeerJoined', peerId);
-        const offer = await rtc.createOfferTo(peerId, (candidate) => signaling.sendIce(peerId, candidate));
-        signaling.sendOffer(peerId, offer);
+        // Peer waits for others to create offers - don't create offers here
+        log('[FLOW][renderer] Waiting for', peerId, 'to initiate WebRTC connection');
       },
       onPeerLeft: ({ clientId: peerId }) => {
         log('[FLOW][renderer] onPeerLeft', peerId);
@@ -165,11 +190,21 @@ async function joinRoom(room) {
         const from = msg.from;
         if (msg.t === 'offer') {
           log('[FLOW][renderer] recv offer from', from);
-          const answer = await rtc.handleOffer(from, msg.sdp, (candidate) => signaling.sendIce(from, candidate));
-          signaling.sendAnswer(from, answer);
+          try {
+            const answer = await rtc.handleOffer(from, msg.sdp, (candidate) => signaling.sendIce(from, candidate));
+            if (answer) {
+              signaling.sendAnswer(from, answer);
+            }
+          } catch (e) {
+            log('[FLOW][renderer] Error handling offer from', from, ':', e.message);
+          }
         } else if (msg.t === 'answer') {
           log('[FLOW][renderer] recv answer from', from);
-          await rtc.handleAnswer(from, msg.sdp);
+          try {
+            await rtc.handleAnswer(from, msg.sdp);
+          } catch (e) {
+            log('[FLOW][renderer] Error handling answer from', from, ':', e.message);
+          }
         } else if (msg.t === 'ice') {
           log('[FLOW][renderer] recv ice from', from);
           await rtc.handleIce(from, msg.candidate);

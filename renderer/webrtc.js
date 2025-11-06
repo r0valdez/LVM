@@ -41,19 +41,32 @@ export class WebRTCManager {
     };
 
     pc.ontrack = (e) => {
-      log('[WEBRTC][renderer] ontrack from', peerId);
+      log('[WEBRTC][renderer] ontrack from', peerId, 'streams:', e.streams.length, 'tracks:', e.track.kind);
+      if (!e.streams || e.streams.length === 0) {
+        log('[WEBRTC][renderer] ⚠️ No streams in track event');
+        return;
+      }
+      
       let videoEl = this.peers.get(peerId)?.videoEl;
       if (!videoEl) {
         videoEl = document.createElement('video');
         videoEl.autoplay = true;
         videoEl.playsInline = true;
         videoEl.dataset.peer = peerId;
+        videoEl.onloadedmetadata = () => {
+          log('[WEBRTC][renderer] ✅ Video element loaded for', peerId);
+        };
+        videoEl.onerror = (err) => {
+          log('[WEBRTC][renderer] ❌ Video element error for', peerId, ':', err);
+        };
         this.gridEl.appendChild(videoEl);
         const rec = this.peers.get(peerId) || { pc };
         rec.videoEl = videoEl;
         this.peers.set(peerId, rec);
+        log('[WEBRTC][renderer] Created video element for', peerId);
       }
       videoEl.srcObject = e.streams[0];
+      log('[WEBRTC][renderer] Set video srcObject for', peerId);
     };
 
     pc.onconnectionstatechange = () => {
@@ -88,32 +101,98 @@ export class WebRTCManager {
   async createOfferTo(peerId, onSignal) {
     log('[WEBRTC][renderer] createOfferTo', peerId);
     const pc = this._ensurePeer(peerId, onSignal);
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    return offer;
+    
+    // Check if we're already in a state where we can't create an offer
+    if (pc.signalingState !== 'stable' && pc.signalingState !== 'have-local-offer') {
+      log('[WEBRTC][renderer] Cannot create offer - signaling state is', pc.signalingState);
+      // If we have a remote offer, we should answer it instead
+      if (pc.signalingState === 'have-remote-offer') {
+        log('[WEBRTC][renderer] Already have remote offer, will answer instead');
+        return null;
+      }
+    }
+    
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      log('[WEBRTC][renderer] Offer created and set as local description');
+      return offer;
+    } catch (e) {
+      log('[WEBRTC][renderer] Error creating offer:', e.message);
+      throw e;
+    }
   }
 
   async handleOffer(fromPeerId, sdp, onSignal) {
     log('[WEBRTC][renderer] handleOffer from', fromPeerId);
     const pc = this._ensurePeer(fromPeerId, onSignal);
-    await pc.setRemoteDescription(new RTCSessionDescription(sdp));
-    const answer = await pc.createAnswer();
-    await pc.setLocalDescription(answer);
-    return answer;
+    
+    // Check if we're in a valid state to receive an offer
+    if (pc.signalingState !== 'stable') {
+      log('[WEBRTC][renderer] Cannot handle offer - signaling state is', pc.signalingState);
+      if (pc.signalingState === 'have-local-offer') {
+        log('[WEBRTC][renderer] Already have local offer, ignoring incoming offer');
+        return null;
+      }
+    }
+    
+    try {
+      await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+      log('[WEBRTC][renderer] Remote description set');
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      log('[WEBRTC][renderer] Answer created and set as local description');
+      return answer;
+    } catch (e) {
+      log('[WEBRTC][renderer] Error handling offer:', e.message);
+      throw e;
+    }
   }
 
   async handleAnswer(fromPeerId, sdp) {
     log('[WEBRTC][renderer] handleAnswer from', fromPeerId);
     const rec = this.peers.get(fromPeerId);
-    if (!rec) return;
-    await rec.pc.setRemoteDescription(new RTCSessionDescription(sdp));
+    if (!rec) {
+      log('[WEBRTC][renderer] No peer connection found for', fromPeerId);
+      return;
+    }
+    
+    const pc = rec.pc;
+    // Check if we're in a valid state to receive an answer
+    if (pc.signalingState !== 'have-local-offer') {
+      log('[WEBRTC][renderer] Cannot handle answer - signaling state is', pc.signalingState);
+      return;
+    }
+    
+    try {
+      await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+      log('[WEBRTC][renderer] Remote answer description set');
+    } catch (e) {
+      log('[WEBRTC][renderer] Error handling answer:', e.message);
+      throw e;
+    }
   }
 
   async handleIce(fromPeerId, candidate) {
     log('[WEBRTC][renderer] handleIce from', fromPeerId);
     const rec = this.peers.get(fromPeerId);
-    if (!rec) return;
-    try { await rec.pc.addIceCandidate(new RTCIceCandidate(candidate)); } catch {}
+    if (!rec) {
+      log('[WEBRTC][renderer] No peer connection found for ICE candidate from', fromPeerId);
+      return;
+    }
+    try {
+      await rec.pc.addIceCandidate(new RTCIceCandidate(candidate));
+      log('[WEBRTC][renderer] Added ICE candidate from', fromPeerId);
+    } catch (e) {
+      // Ignore errors for null candidates (end of ICE gathering)
+      if (candidate && candidate.candidate) {
+        log('[WEBRTC][renderer] Error adding ICE candidate from', fromPeerId, ':', e.message);
+      }
+    }
+  }
+
+  hasPeer(peerId) {
+    return this.peers.has(peerId) && this.peers.get(peerId)?.pc;
   }
 
   _ensurePeer(peerId, onSignal) {

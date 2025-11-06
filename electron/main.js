@@ -232,7 +232,8 @@ function startAnnouncing(roomId, roomName, wsPort) {
       console.error('[ANNOUNCE] Cannot send - discovery socket not ready');
       return;
     }
-    const participants = 1 + clientIdToSocket.size;
+    // Count all WebSocket clients (host is now also a client, so just count clients)
+    const participants = clientIdToSocket.size;
     const payload = JSON.stringify({
       t: 'announce',
       roomId,
