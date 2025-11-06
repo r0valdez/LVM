@@ -43,6 +43,10 @@ contextBridge.exposeInMainWorld('lan', {
     const listener = (_e, peers) => cb && cb(peers);
     ipcRenderer.on('peers-update', listener);
     console.log('[PRELOAD] peers-update listener registered');
+    // Request initial peer list
+    ipcRenderer.invoke('peer:get-list').then((peers) => {
+      if (peers) cb(peers);
+    });
     return () => ipcRenderer.removeListener('peers-update', listener);
   },
   onInvitationReceived: (cb) => {

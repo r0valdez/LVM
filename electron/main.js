@@ -117,6 +117,12 @@ function createWindow() {
 
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
   console.log('[MAIN] BrowserWindow created and index.html loaded');
+  
+  // Send initial peer list when window is ready
+  mainWindow.webContents.once('did-finish-load', () => {
+    console.log('[MAIN] Window finished loading, sending initial peer list');
+    setTimeout(() => sendPeersUpdate(), 1000);
+  });
 
   mainWindow.on('close', (event) => {
     if (isInMeeting) {
@@ -176,8 +182,11 @@ function sendRoomsUpdate() {
 
 function sendPeersUpdate() {
   const peers = Array.from(peerMap.values()).map((p) => p.data);
+  console.log('[DISCOVERY] Sending peers update:', peers.length, 'peers');
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('peers-update', peers);
+  } else {
+    console.log('[DISCOVERY] Cannot send peers update - window not ready');
   }
 }
 
@@ -231,9 +240,14 @@ function startDiscovery() {
         console.log('[DISCOVERY] peer-presence received from', rinfo.address + ':' + rinfo.port, '- peerId:', data.peerId, 'name:', data.peerName);
         // Ignore our own peer announcements
         if (myPeerInfo && data.peerId === myPeerInfo.peerId) {
+          console.log('[DISCOVERY] ignoring own peer-presence');
           return;
         }
+        const wasNew = !peerMap.has(data.peerId);
         peerMap.set(data.peerId, { data, lastSeen: Date.now() });
+        if (wasNew) {
+          console.log('[DISCOVERY] New peer discovered:', data.peerName, '- total peers:', peerMap.size);
+        }
         sendPeersUpdate();
       } else if (data && data.t === 'invitation' && data.roomId && data.roomName) {
         // Room invitation
@@ -360,12 +374,15 @@ function startDiscovery() {
       // Prune stale peers
       for (const [peerId, rec] of peerMap.entries()) {
         if (now - rec.lastSeen > 6000) {
-          console.log('[DISCOVERY] pruning stale peer', peerId);
+          console.log('[DISCOVERY] pruning stale peer', peerId, rec.data.peerName, '- total peers:', peerMap.size - 1);
           peerMap.delete(peerId);
           peersChanged = true;
         }
       }
-      if (peersChanged) sendPeersUpdate();
+      if (peersChanged) {
+        console.log('[DISCOVERY] Peer list changed, sending update');
+        sendPeersUpdate();
+      }
     }, 1000);
   }
 }
@@ -602,7 +619,14 @@ ipcMain.handle('sys:get-local-ip', () => getLocalIp());
 ipcMain.handle('peer:init', (e, { peerId, peerName }) => {
   console.log('[IPC] peer:init', peerId, peerName);
   startPeerAnnouncing(peerId, peerName);
+  // Send current peer list after initialization
+  setTimeout(() => sendPeersUpdate(), 500);
   return { ok: true };
+});
+
+ipcMain.handle('peer:get-list', () => {
+  const peers = Array.from(peerMap.values()).map((p) => p.data);
+  return peers;
 });
 
 ipcMain.handle('peer:send-invitation', (e, { roomId, roomName, hostIp, wsPort, targetPeerIds }) => {

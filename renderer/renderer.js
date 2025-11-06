@@ -43,8 +43,18 @@ async function init() {
 
 function renderPeers(peers) {
   log('[UI][renderer] renderPeers count', peers.length);
-  peerListEl.innerHTML = '';
   const list = peers || [];
+  const currentPeerIds = new Set(list.map(p => p.peerId));
+  
+  // Clean up selected peers that are no longer online
+  for (const peerId of selectedPeerIds) {
+    if (!currentPeerIds.has(peerId)) {
+      log('[UI][renderer] Removing offline peer from selection:', peerId);
+      selectedPeerIds.delete(peerId);
+    }
+  }
+  
+  peerListEl.innerHTML = '';
   
   if (list.length === 0) {
     const emptyMsg = document.createElement('div');
