@@ -59,7 +59,7 @@ function renderPeers(peers) {
   if (list.length === 0) {
     const emptyMsg = document.createElement('div');
     emptyMsg.className = 'peer-list-empty';
-    emptyMsg.textContent = 'No peers online';
+    emptyMsg.textContent = 'No users online';
     peerListEl.appendChild(emptyMsg);
     return;
   }
@@ -83,8 +83,18 @@ function renderPeers(peers) {
     
     const label = document.createElement('label');
     label.htmlFor = `peer-${peer.peerId}`;
-    label.textContent = peer.peerName || 'Unknown';
     label.className = 'peer-name';
+    
+    const nameSpan = document.createElement('span');
+    nameSpan.textContent = peer.peerName || 'Unknown';
+    nameSpan.className = 'peer-name-text';
+    
+    const ipSpan = document.createElement('span');
+    ipSpan.textContent = peer.peerIp || '';
+    ipSpan.className = 'peer-ip';
+    
+    label.appendChild(nameSpan);
+    label.appendChild(ipSpan);
     
     item.appendChild(checkbox);
     item.appendChild(label);

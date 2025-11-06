@@ -160,10 +160,24 @@ video[data-peer="self"]:hover {
   font-size: 13px;
   color: #e6e6e6;
   user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
 }
 
 .peer-item label:hover {
   color: #ffffff;
+}
+
+.peer-name-text {
+  font-weight: 500;
+}
+
+.peer-ip {
+  font-size: 11px;
+  color: #9ca3af;
+  font-family: 'Courier New', monospace;
 }
 
 .notification-banner {
