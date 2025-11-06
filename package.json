@@ -1,0 +1,14 @@
+{
+  "name": "lan-video-meeting",
+  "version": "1.0.0",
+  "main": "electron/main.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "electron ."
+  },
+  "dependencies": {
+    "electron": "^31.0.0",
+    "ws": "^8.13.0"
+  }
+}
+

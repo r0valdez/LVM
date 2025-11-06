@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LAN Video Meeting</title>
+  <link rel="stylesheet" href="./ui.css" />
+</head>
+<body>
+  <div class="container">
+    <h1 class="title">LAN Video Meeting</h1>
+    <div class="rooms-row">
+      <div class="rooms-list" id="rooms"></div>
+      <div class="room-actions">
+        <button id="createRoomBtn" class="primary">Create Room</button>
+        <button id="exitBtn" class="danger" disabled>Exit</button>
+      </div>
+    </div>
+    <div class="video-grid" id="videoGrid"></div>
+  </div>
+  <script type="module" src="./renderer.js"></script>
+  <noscript>This app requires JavaScript enabled.</noscript>
+  
+</body>
+</html>
+
+

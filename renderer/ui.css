@@ -1,0 +1,37 @@
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; background: #0f1115; color: #e6e6e6; }
+.container { max-width: 760px; margin: 0 auto; padding: 12px; }
+.title { text-align: center; margin: 12px 0 18px; font-weight: 600; letter-spacing: 0.3px; }
+
+.rooms-row { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 12px; }
+.rooms-list { display: flex; flex-wrap: wrap; gap: 8px; flex: 1; }
+.room-actions { display: flex; flex-direction: column; gap: 8px; }
+
+button { background: #1b1f2a; color: #e6e6e6; border: 1px solid #2a3142; padding: 8px 12px; border-radius: 6px; cursor: pointer; transition: background 0.2s ease, border-color 0.2s ease; }
+button:hover { background: #232a3a; border-color: #3a4660; }
+button.primary { background: #2b4fff; border-color: #1f3bce; }
+button.primary:hover { background: #2442d9; }
+button.danger { background: #ff3b3b; border-color: #cc2f2f; }
+button.danger:hover { background: #e03434; }
+button.active { outline: 2px solid #2b4fff; }
+button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.video-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+video {
+  width: 100%;
+  height: 150px;
+  object-fit: cover;
+  background: #000;
+  border-radius: 6px;
+}
+
+.room-button { background: #18202d; border: 1px solid #29354a; }
+.room-button.active { background: #20314e; border-color: #2b4fff; }
+.room-meta { opacity: 0.8; font-size: 12px; }
+
+
