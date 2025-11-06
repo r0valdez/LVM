@@ -43,10 +43,10 @@ class DiscoveryController {
     }
   }
 
-  async startHosting(preferredPort = 57788) {
+  async startHosting(preferredPort = 57788, customRoomName = null) {
     if (this.hosting) return this.hosting;
     const roomId = uuidv4();
-    const roomName = await getDefaultRoomName();
+    const roomName = customRoomName && customRoomName.trim() ? customRoomName.trim() : await getDefaultRoomName();
     log('[DISCOVERY][renderer] startHosting', roomId, roomName, preferredPort);
     const res = await window.lan.hostStart(roomId, roomName, preferredPort);
     if (!res || !res.ok) throw new Error(res && res.error || 'Failed to host');

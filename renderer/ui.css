@@ -84,6 +84,33 @@ video[data-peer="self"]:hover {
   height: 100%;
 }
 
+.room-name-input {
+  background: #1b1f2a;
+  color: #e6e6e6;
+  border: 1px solid #2a3142;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+  width: 100%;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.room-name-input:focus {
+  outline: none;
+  background: #232a3a;
+  border-color: #3a4660;
+}
+
+.room-name-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.room-name-input::placeholder {
+  color: #6b7280;
+}
+
 .room-button { background: #18202d; border: 1px solid #29354a; }
 .room-button.active { background: #20314e; border-color: #2b4fff; }
 .room-meta { opacity: 0.8; font-size: 12px; }

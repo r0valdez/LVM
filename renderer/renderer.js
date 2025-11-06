@@ -7,6 +7,7 @@ const roomsEl = document.getElementById('rooms');
 const createRoomBtn = document.getElementById('createRoomBtn');
 const exitBtn = document.getElementById('exitBtn');
 const videoGrid = document.getElementById('videoGrid');
+const roomNameInput = document.getElementById('roomNameInput');
 
 let currentRoom = null; // { mode: 'host'|'join', roomId, hostIp, wsPort }
 let clientId = uuidv4();
@@ -23,6 +24,13 @@ async function init() {
 
   createRoomBtn.onclick = onCreateRoom;
   exitBtn.onclick = onExit;
+  
+  // Allow Enter key to create room
+  roomNameInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter' && !createRoomBtn.disabled) {
+      onCreateRoom();
+    }
+  });
 }
 
 function renderRooms(rooms) {
@@ -56,10 +64,12 @@ function renderRooms(rooms) {
 async function onCreateRoom() {
   if (currentRoom) return;
   log('[UI][renderer] Create Room clicked');
-  const host = await Discovery.startHosting(57788);
+  const customRoomName = roomNameInput.value;
+  const host = await Discovery.startHosting(57788, customRoomName);
   const hostIp = await window.lan.getLocalIp();
   currentRoom = { mode: 'host', roomId: host.roomId, hostIp, wsPort: host.wsPort };
   createRoomBtn.disabled = true;
+  roomNameInput.disabled = true;
   exitBtn.disabled = false;
   
   await rtc.initLocal(clientId);
@@ -252,6 +262,7 @@ async function onExit() {
 
   currentRoom = null;
   createRoomBtn.disabled = false;
+  roomNameInput.disabled = false;
   exitBtn.disabled = true;
 }
 
