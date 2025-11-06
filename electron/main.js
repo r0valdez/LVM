@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, dialog } = require('electron');
 const path = require('path');
 const os = require('os');
 const dgram = require('dgram');
@@ -9,6 +9,8 @@ const MULTICAST_PORT = 55555;
 const DEFAULT_WS_PORT = 57788;
 
 let mainWindow = null;
+let tray = null;
+let isInMeeting = false; // Track if user is in a meeting
 
 // Discovery state (rooms seen on LAN)
 // All peers (hosts and participants) share the same UDP multicast listener
@@ -25,7 +27,80 @@ let wsServer = null;
 const clientIdToSocket = new Map(); // clientId -> ws
 const clientIdToInfo = new Map(); // clientId -> { name }
 
+function createTray() {
+  // Try to load icon from assets folder
+  let icon;
+  const iconPath = path.join(__dirname, '..', 'assets', 'icon.png');
+  try {
+    icon = nativeImage.createFromPath(iconPath);
+    if (icon.isEmpty()) throw new Error('Icon is empty');
+    console.log('[MAIN] Loaded tray icon from', iconPath);
+  } catch (e) {
+    // Fallback: create a simple 16x16 icon using a data URL (1x1 blue pixel scaled)
+    // This creates a minimal blue square icon
+    const iconData = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+      'base64'
+    );
+    try {
+      icon = nativeImage.createFromBuffer(iconData);
+      // Resize to 16x16 for tray
+      icon = icon.resize({ width: 16, height: 16 });
+      console.log('[MAIN] Created default tray icon');
+    } catch (e2) {
+      // Last resort: use empty icon (Windows will show default)
+      console.log('[MAIN] Using system default tray icon');
+      icon = nativeImage.createEmpty();
+    }
+  }
+  
+  tray = new Tray(icon);
+  updateTrayIcon();
+  
+  tray.setToolTip('LAN Video Meeting');
+  tray.on('click', () => {
+    if (mainWindow) {
+      if (mainWindow.isVisible()) {
+        mainWindow.hide();
+      } else {
+        mainWindow.show();
+        mainWindow.focus();
+      }
+    } else {
+      createWindow();
+    }
+  });
+  
+  console.log('[MAIN] Tray icon created');
+}
+
+function updateTrayIcon() {
+  if (!tray) return;
+  
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: isInMeeting ? 'In Meeting' : 'Not in Meeting',
+      enabled: false
+    },
+    { type: 'separator' },
+    {
+      label: 'Quit',
+      click: () => {
+        app.quit();
+      }
+    }
+  ]);
+  
+  tray.setContextMenu(contextMenu);
+}
+
 function createWindow() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.show();
+    mainWindow.focus();
+    return;
+  }
+  
   mainWindow = new BrowserWindow({
     width: 900,
     height: 900,
@@ -40,9 +115,23 @@ function createWindow() {
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
   console.log('[MAIN] BrowserWindow created and index.html loaded');
 
+  mainWindow.on('close', (event) => {
+    if (isInMeeting) {
+      // Prevent closing if in a meeting
+      console.log('[MAIN] Window close prevented - user is in a meeting');
+      event.preventDefault();
+      mainWindow.hide();
+    } else {
+      // Allow closing but hide to tray instead of destroying
+      console.log('[MAIN] Window closing - hiding to tray');
+      event.preventDefault();
+      mainWindow.hide();
+    }
+  });
+
   mainWindow.on('closed', () => {
     console.log('[MAIN] Main window closed');
-    mainWindow = null;
+    // Don't set mainWindow to null - we want to keep it for tray
   });
 }
 
@@ -379,6 +468,8 @@ ipcMain.handle('host:start', (e, { roomId, roomName, wsPort }) => {
     startWsServer(wsPort || DEFAULT_WS_PORT);
     startAnnouncing(roomId, roomName, wsPort || DEFAULT_WS_PORT);
     isHosting = true;
+    isInMeeting = true;
+    updateTrayIcon();
     return { ok: true, hostIp: getLocalIp(), wsPort: wsPort || DEFAULT_WS_PORT };
   } catch (e2) {
     console.error('[IPC] host:start failed', e2);
@@ -392,27 +483,60 @@ ipcMain.handle('host:stop', () => {
   stopAnnouncing();
   stopWsServer(true);
   isHosting = false;
+  isInMeeting = false;
+  updateTrayIcon();
+  return { ok: true };
+});
+
+// Track meeting state from renderer
+ipcMain.handle('meeting:join', () => {
+  console.log('[IPC] meeting:join');
+  isInMeeting = true;
+  updateTrayIcon();
+  return { ok: true };
+});
+
+ipcMain.handle('meeting:leave', () => {
+  console.log('[IPC] meeting:leave');
+  isInMeeting = false;
+  updateTrayIcon();
   return { ok: true };
 });
 
 app.whenReady().then(() => {
   createWindow();
+  createTray();
   // Start discovery immediately at app launch - all peers listen for room announcements
   // This happens before any room is created, ensuring peers can discover rooms at any time
   startDiscovery();
   console.log('[APP] ready - discovery socket active');
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show();
+      mainWindow.focus();
+    } else {
+      createWindow();
+    }
   });
 });
 
+// Don't quit when all windows are closed - keep running in tray
 app.on('window-all-closed', () => {
-  console.log('[APP] window-all-closed');
+  console.log('[APP] window-all-closed - keeping app running in tray');
+  // Don't call app.quit() - app stays running in tray
+});
+
+// Clean up on app quit
+app.on('before-quit', () => {
+  console.log('[APP] before-quit - cleaning up');
   stopAnnouncing();
   stopWsServer(false);
   stopDiscovery();
-  if (process.platform !== 'darwin') app.quit();
+  if (tray) {
+    tray.destroy();
+    tray = null;
+  }
 });
 
 

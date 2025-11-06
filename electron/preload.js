@@ -22,6 +22,14 @@ contextBridge.exposeInMainWorld('lan', {
   hostStop: () => {
     console.log('[PRELOAD] hostStop');
     return ipcRenderer.invoke('host:stop');
+  },
+  meetingJoin: () => {
+    console.log('[PRELOAD] meetingJoin');
+    return ipcRenderer.invoke('meeting:join');
+  },
+  meetingLeave: () => {
+    console.log('[PRELOAD] meetingLeave');
+    return ipcRenderer.invoke('meeting:leave');
   }
 });
 

@@ -160,6 +160,8 @@ async function onCreateRoom() {
   try {
     log('[FLOW][renderer][HOST] signaling.connect to own server');
     await signaling.connect();
+    // Notify main process that we're in a meeting (host:start already did this, but ensure it)
+    await window.lan.meetingJoin();
   } catch (e) {
     console.error('[FLOW][renderer][HOST] signaling connect failed', e);
     alert('Failed to connect to own signaling server');
@@ -235,6 +237,8 @@ async function joinRoom(room) {
   try {
     log('[FLOW][renderer] signaling.connect');
     await signaling.connect();
+    // Notify main process that we're in a meeting
+    await window.lan.meetingJoin();
   } catch (e) {
     console.error('[FLOW][renderer] signaling connect failed', e);
     alert('Failed to connect to room');
@@ -259,6 +263,9 @@ async function onExit() {
   }
 
   rtc.cleanup();
+
+  // Notify main process that we left the meeting
+  await window.lan.meetingLeave();
 
   currentRoom = null;
   createRoomBtn.disabled = false;
