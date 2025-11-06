@@ -27,7 +27,7 @@ const clientIdToInfo = new Map(); // clientId -> { name }
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 800,
+    width: 900,
     height: 900,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
