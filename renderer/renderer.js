@@ -57,11 +57,77 @@ async function onCreateRoom() {
   if (currentRoom) return;
   log('[UI][renderer] Create Room clicked');
   const host = await Discovery.startHosting(57788);
-  currentRoom = { mode: 'host', roomId: host.roomId, hostIp: await window.lan.getLocalIp(), wsPort: host.wsPort };
+  const hostIp = await window.lan.getLocalIp();
+  currentRoom = { mode: 'host', roomId: host.roomId, hostIp, wsPort: host.wsPort };
   createRoomBtn.disabled = true;
   exitBtn.disabled = false;
-  // Host doesn't connect as WS client; only shows self and waits for peers
+  
   await rtc.initLocal(clientId);
+  
+  // Host must also connect as WebSocket client to participate in WebRTC signaling
+  signaling = new SignalingClient({
+    url: `ws://${hostIp}:${host.wsPort}`,
+    clientId,
+    name: clientName,
+    handlers: {
+      onWelcome: async ({ participants }) => {
+        log('[FLOW][renderer][HOST] onWelcome participants', participants.length);
+        // Host creates offers to existing participants
+        for (const p of participants) {
+          const offer = await rtc.createOfferTo(p.clientId, (candidate) => signaling.sendIce(p.clientId, candidate));
+          signaling.sendOffer(p.clientId, offer);
+        }
+      },
+      onPeerJoined: async ({ clientId: peerId }) => {
+        log('[FLOW][renderer][HOST] onPeerJoined', peerId);
+        // When new peer joins, host creates offer to them
+        const offer = await rtc.createOfferTo(peerId, (candidate) => signaling.sendIce(peerId, candidate));
+        signaling.sendOffer(peerId, offer);
+      },
+      onPeerLeft: ({ clientId: peerId }) => {
+        log('[FLOW][renderer][HOST] onPeerLeft', peerId);
+        rtc.removePeer(peerId);
+      },
+      onSignal: async (msg) => {
+        const from = msg.from;
+        if (msg.t === 'offer') {
+          log('[FLOW][renderer][HOST] recv offer from', from);
+          const answer = await rtc.handleOffer(from, msg.sdp, (candidate) => signaling.sendIce(from, candidate));
+          signaling.sendAnswer(from, answer);
+        } else if (msg.t === 'answer') {
+          log('[FLOW][renderer][HOST] recv answer from', from);
+          await rtc.handleAnswer(from, msg.sdp);
+        } else if (msg.t === 'ice') {
+          log('[FLOW][renderer][HOST] recv ice from', from);
+          await rtc.handleIce(from, msg.candidate);
+        }
+      },
+      onEnd: () => {
+        log('[FLOW][renderer][HOST] onEnd (should not happen for host)');
+      },
+      onClosed: () => {
+        log('[FLOW][renderer][HOST] WS closed');
+        if (currentRoom && currentRoom.mode === 'host') {
+          // Reconnect if we're still hosting
+          setTimeout(() => {
+            if (currentRoom && currentRoom.mode === 'host') {
+              log('[FLOW][renderer][HOST] Attempting to reconnect...');
+              onCreateRoom(); // Re-establish connection
+            }
+          }, 1000);
+        }
+      }
+    }
+  });
+
+  try {
+    log('[FLOW][renderer][HOST] signaling.connect to own server');
+    await signaling.connect();
+  } catch (e) {
+    console.error('[FLOW][renderer][HOST] signaling connect failed', e);
+    alert('Failed to connect to own signaling server');
+    onExit();
+  }
 }
 
 async function joinRoom(room) {
@@ -135,8 +201,13 @@ async function onExit() {
   if (!currentRoom) return;
   log('[UI][renderer] Exit clicked, mode =', currentRoom.mode);
   if (currentRoom.mode === 'host') {
+    // Host: close signaling connection and stop hosting
+    try { signaling && signaling.leave(); } catch {}
+    try { signaling && signaling.close(); } catch {}
+    signaling = null;
     await Discovery.stopHosting();
   } else if (currentRoom.mode === 'join') {
+    // Participant: just leave
     try { signaling && signaling.leave(); } catch {}
     try { signaling && signaling.close(); } catch {}
     signaling = null;

@@ -59,9 +59,26 @@ export class WebRTCManager {
     pc.onconnectionstatechange = () => {
       const st = pc.connectionState;
       log('[WEBRTC][renderer] connection state', peerId, st);
-      if (st === 'failed' || st === 'closed' || st === 'disconnected') {
+      if (st === 'connected') {
+        log('[WEBRTC][renderer] ✅ Connected to', peerId);
+      } else if (st === 'failed' || st === 'closed') {
+        log('[WEBRTC][renderer] ❌ Connection failed/closed for', peerId);
         this.removePeer(peerId);
+      } else if (st === 'disconnected') {
+        log('[WEBRTC][renderer] ⚠️ Disconnected from', peerId, '- will retry if reconnects');
       }
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      const st = pc.iceConnectionState;
+      log('[WEBRTC][renderer] ICE connection state', peerId, st);
+      if (st === 'failed' || st === 'disconnected') {
+        log('[WEBRTC][renderer] ICE connection issue with', peerId);
+      }
+    };
+
+    pc.onicegatheringstatechange = () => {
+      log('[WEBRTC][renderer] ICE gathering state', peerId, pc.iceGatheringState);
     };
 
     this.peers.set(peerId, { pc, videoEl: null });
