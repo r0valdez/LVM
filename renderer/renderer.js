@@ -8,19 +8,27 @@ const createRoomBtn = document.getElementById('createRoomBtn');
 const exitBtn = document.getElementById('exitBtn');
 const videoGrid = document.getElementById('videoGrid');
 const roomNameInput = document.getElementById('roomNameInput');
+const peerListEl = document.getElementById('peerList');
 
 let currentRoom = null; // { mode: 'host'|'join', roomId, hostIp, wsPort }
 let clientId = uuidv4();
 let clientName = 'Guest';
 let signaling = null;
 let rtc = null;
+let selectedPeerIds = new Set(); // Track selected peers for invitation
 
 async function init() {
   clientName = await getDefaultRoomName();
   rtc = new WebRTCManager({ gridEl: videoGrid });
   log('[APP][renderer] init with name', clientName, 'clientId', clientId);
 
+  // Initialize peer presence
+  await window.lan.peerInit(clientId, clientName);
+
   Discovery.onRooms(renderRooms);
+  window.lan.onPeersUpdate(renderPeers);
+  window.lan.onInvitationReceived(handleInvitationReceived);
+  window.lan.onShowNotification(showInAppNotification);
 
   createRoomBtn.onclick = onCreateRoom;
   exitBtn.onclick = onExit;
@@ -31,6 +39,79 @@ async function init() {
       onCreateRoom();
     }
   });
+}
+
+function renderPeers(peers) {
+  log('[UI][renderer] renderPeers count', peers.length);
+  peerListEl.innerHTML = '';
+  const list = peers || [];
+  
+  if (list.length === 0) {
+    const emptyMsg = document.createElement('div');
+    emptyMsg.className = 'peer-list-empty';
+    emptyMsg.textContent = 'No peers online';
+    peerListEl.appendChild(emptyMsg);
+    return;
+  }
+  
+  for (const peer of list) {
+    const item = document.createElement('div');
+    item.className = 'peer-item';
+    
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.id = `peer-${peer.peerId}`;
+    checkbox.checked = selectedPeerIds.has(peer.peerId);
+    checkbox.onchange = (e) => {
+      if (e.target.checked) {
+        selectedPeerIds.add(peer.peerId);
+      } else {
+        selectedPeerIds.delete(peer.peerId);
+      }
+      log('[UI][renderer] Selected peers:', Array.from(selectedPeerIds));
+    };
+    
+    const label = document.createElement('label');
+    label.htmlFor = `peer-${peer.peerId}`;
+    label.textContent = peer.peerName || 'Unknown';
+    label.className = 'peer-name';
+    
+    item.appendChild(checkbox);
+    item.appendChild(label);
+    peerListEl.appendChild(item);
+  }
+}
+
+function handleInvitationReceived(data) {
+  log('[FLOW][renderer] Invitation received', data);
+  const { roomId, roomName, hostIp, wsPort } = data;
+  
+  // Show notification
+  showInAppNotification(`You've invited to ${roomName}. Please join now.`);
+  
+  // Auto-join the room
+  setTimeout(() => {
+    const room = { roomId, roomName, hostIp, wsPort, participants: 0 };
+    joinRoom(room);
+  }, 1000);
+}
+
+function showInAppNotification(message) {
+  // Create a notification banner
+  const notification = document.createElement('div');
+  notification.className = 'notification-banner';
+  notification.textContent = message;
+  document.body.appendChild(notification);
+  
+  // Auto-remove after 5 seconds
+  setTimeout(() => {
+    notification.classList.add('fade-out');
+    setTimeout(() => {
+      if (notification.parentNode) {
+        notification.parentNode.removeChild(notification);
+      }
+    }, 300);
+  }, 5000);
 }
 
 function renderRooms(rooms) {
@@ -68,6 +149,20 @@ async function onCreateRoom() {
   const host = await Discovery.startHosting(57788, customRoomName);
   const hostIp = await window.lan.getLocalIp();
   currentRoom = { mode: 'host', roomId: host.roomId, hostIp, wsPort: host.wsPort };
+  
+  // Send invitations to selected peers
+  if (selectedPeerIds.size > 0) {
+    const targetPeerIds = Array.from(selectedPeerIds);
+    await window.lan.peerSendInvitation(
+      host.roomId,
+      host.roomName,
+      hostIp,
+      host.wsPort,
+      targetPeerIds
+    );
+    log('[FLOW][renderer] Sent invitations to', targetPeerIds.length, 'peers');
+  }
+  
   createRoomBtn.disabled = true;
   roomNameInput.disabled = true;
   exitBtn.disabled = false;

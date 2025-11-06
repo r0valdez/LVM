@@ -16,8 +16,11 @@ let isInMeeting = false; // Track if user is in a meeting
 // All peers (hosts and participants) share the same UDP multicast listener
 // Discovery socket is created immediately at app startup (before any room creation)
 const roomMap = new Map(); // roomId -> { data, lastSeen }
+const peerMap = new Map(); // peerId -> { data, lastSeen }
 let discoverySocket = null; // Shared UDP socket for all peers
 let pruneInterval = null;
+let peerAnnounceInterval = null; // For announcing peer presence
+let myPeerInfo = null; // { peerId, peerName, peerIp }
 
 // Hosting state
 let isHosting = false;
@@ -171,6 +174,32 @@ function sendRoomsUpdate() {
   }
 }
 
+function sendPeersUpdate() {
+  const peers = Array.from(peerMap.values()).map((p) => p.data);
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('peers-update', peers);
+  }
+}
+
+function showNotification(message) {
+  if (!mainWindow) return;
+  
+  // Show Electron notification (works even when minimized)
+  const { Notification } = require('electron');
+  if (Notification.isSupported()) {
+    new Notification({
+      title: 'LAN Video Meeting',
+      body: message,
+      silent: false
+    }).show();
+  }
+  
+  // Also try to show in window if visible
+  if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) {
+    mainWindow.webContents.send('show-notification', message);
+  }
+}
+
 // Start UDP multicast discovery listener
 // Called immediately at app startup - all peers (hosts and participants) use this same socket
 function startDiscovery() {
@@ -197,6 +226,37 @@ function startDiscovery() {
         }
         roomMap.set(data.roomId, { data, lastSeen: Date.now() });
         sendRoomsUpdate();
+      } else if (data && data.t === 'peer-presence' && data.peerId) {
+        // Peer presence announcement
+        console.log('[DISCOVERY] peer-presence received from', rinfo.address + ':' + rinfo.port, '- peerId:', data.peerId, 'name:', data.peerName);
+        // Ignore our own peer announcements
+        if (myPeerInfo && data.peerId === myPeerInfo.peerId) {
+          return;
+        }
+        peerMap.set(data.peerId, { data, lastSeen: Date.now() });
+        sendPeersUpdate();
+      } else if (data && data.t === 'invitation' && data.roomId && data.roomName) {
+        // Room invitation
+        console.log('[DISCOVERY] invitation received for room:', data.roomName, 'from:', data.fromPeerId);
+        // Check if this invitation is for us
+        if (myPeerInfo && data.targetPeerIds && data.targetPeerIds.includes(myPeerInfo.peerId)) {
+          // Restore window if minimized
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            if (mainWindow.isMinimized()) {
+              mainWindow.restore();
+            }
+            mainWindow.show();
+            mainWindow.focus();
+            mainWindow.webContents.send('invitation-received', {
+              roomId: data.roomId,
+              roomName: data.roomName,
+              hostIp: data.hostIp,
+              wsPort: data.wsPort
+            });
+          }
+          // Also show system notification (works even when minimized)
+          showNotification('You\'ve invited to ' + data.roomName + '. Please join now.');
+        }
       } else {
         console.log('[DISCOVERY] Received non-announce message or invalid data');
       }
@@ -284,15 +344,28 @@ function startDiscovery() {
   if (!pruneInterval) {
     pruneInterval = setInterval(() => {
       const now = Date.now();
-      let changed = false;
+      let roomsChanged = false;
+      let peersChanged = false;
+      
+      // Prune stale rooms
       for (const [roomId, rec] of roomMap.entries()) {
         if (now - rec.lastSeen > 6000) {
           console.log('[DISCOVERY] pruning stale room', roomId);
           roomMap.delete(roomId);
-          changed = true;
+          roomsChanged = true;
         }
       }
-      if (changed) sendRoomsUpdate();
+      if (roomsChanged) sendRoomsUpdate();
+      
+      // Prune stale peers
+      for (const [peerId, rec] of peerMap.entries()) {
+        if (now - rec.lastSeen > 6000) {
+          console.log('[DISCOVERY] pruning stale peer', peerId);
+          peerMap.delete(peerId);
+          peersChanged = true;
+        }
+      }
+      if (peersChanged) sendPeersUpdate();
     }, 1000);
   }
 }
@@ -457,9 +530,86 @@ function stopWsServer(broadcastEnd) {
   clientIdToInfo.clear();
 }
 
+// Start announcing peer presence
+function startPeerAnnouncing(peerId, peerName) {
+  const ip = getLocalIp();
+  myPeerInfo = { peerId, peerName, peerIp: ip };
+  if (peerAnnounceInterval) clearInterval(peerAnnounceInterval);
+  
+  const sendPeerPresence = () => {
+    if (!discoverySocket) return;
+    const payload = JSON.stringify({
+      t: 'peer-presence',
+      peerId,
+      peerName,
+      peerIp: ip,
+      ts: Date.now()
+    });
+    const buf = Buffer.from(payload);
+    try {
+      discoverySocket.send(buf, 0, buf.length, MULTICAST_PORT, MULTICAST_ADDR, (err) => {
+        if (err) {
+          console.error('[PEER-ANNOUNCE] Send error:', err.message);
+        }
+      });
+      console.log('[PEER-ANNOUNCE] Sent peer presence', peerId, peerName);
+    } catch (e) {
+      console.error('[PEER-ANNOUNCE] Send exception:', e.message);
+    }
+  };
+  
+  // Send immediately, then every 3 seconds
+  sendPeerPresence();
+  peerAnnounceInterval = setInterval(sendPeerPresence, 3000);
+  console.log('[PEER-ANNOUNCE] Started announcing peer', peerId, peerName);
+}
+
+function stopPeerAnnouncing() {
+  if (peerAnnounceInterval) {
+    clearInterval(peerAnnounceInterval);
+    peerAnnounceInterval = null;
+  }
+  myPeerInfo = null;
+}
+
+// Send invitation to selected peers
+function sendInvitation(roomId, roomName, hostIp, wsPort, targetPeerIds) {
+  if (!discoverySocket || !myPeerInfo) return;
+  const payload = JSON.stringify({
+    t: 'invitation',
+    roomId,
+    roomName,
+    hostIp,
+    wsPort,
+    fromPeerId: myPeerInfo.peerId,
+    fromPeerName: myPeerInfo.peerName,
+    targetPeerIds,
+    ts: Date.now()
+  });
+  const buf = Buffer.from(payload);
+  try {
+    discoverySocket.send(buf, 0, buf.length, MULTICAST_PORT, MULTICAST_ADDR);
+    console.log('[INVITATION] Sent invitation for room', roomName, 'to', targetPeerIds.length, 'peers');
+  } catch (e) {
+    console.error('[INVITATION] Send error:', e.message);
+  }
+}
+
 // IPC bridge
 ipcMain.handle('sys:get-hostname', () => os.hostname());
 ipcMain.handle('sys:get-local-ip', () => getLocalIp());
+
+ipcMain.handle('peer:init', (e, { peerId, peerName }) => {
+  console.log('[IPC] peer:init', peerId, peerName);
+  startPeerAnnouncing(peerId, peerName);
+  return { ok: true };
+});
+
+ipcMain.handle('peer:send-invitation', (e, { roomId, roomName, hostIp, wsPort, targetPeerIds }) => {
+  console.log('[IPC] peer:send-invitation', roomName, 'to', targetPeerIds);
+  sendInvitation(roomId, roomName, hostIp, wsPort, targetPeerIds);
+  return { ok: true };
+});
 
 ipcMain.handle('host:start', (e, { roomId, roomName, wsPort }) => {
   if (isHosting) return { ok: false, error: 'already-hosting' };
