@@ -11,8 +11,10 @@ const DEFAULT_WS_PORT = 57788;
 let mainWindow = null;
 
 // Discovery state (rooms seen on LAN)
+// All peers (hosts and participants) share the same UDP multicast listener
+// Discovery socket is created immediately at app startup (before any room creation)
 const roomMap = new Map(); // roomId -> { data, lastSeen }
-let discoverySocket = null;
+let discoverySocket = null; // Shared UDP socket for all peers
 let pruneInterval = null;
 
 // Hosting state
@@ -80,38 +82,76 @@ function sendRoomsUpdate() {
   }
 }
 
+// Start UDP multicast discovery listener
+// Called immediately at app startup - all peers (hosts and participants) use this same socket
 function startDiscovery() {
   if (discoverySocket) return;
   discoverySocket = dgram.createSocket({ type: 'udp4', reuseAddr: true });
-  console.log('[DISCOVERY] UDP socket created');
+  console.log('[DISCOVERY] UDP socket created (shared by all peers)');
 
   discoverySocket.on('error', (err) => {
-    console.error('UDP discovery error:', err);
+    console.error('[DISCOVERY] Socket error:', err);
   });
 
-  discoverySocket.on('message', (msg) => {
+  discoverySocket.on('message', (msg, rinfo) => {
     try {
       const data = JSON.parse(msg.toString());
       if (data && data.t === 'announce' && data.roomId) {
-        console.log('[DISCOVERY] announce received', data.roomId, data.roomName, `${data.hostIp}:${data.wsPort}`, 'participants:', data.participants);
-        // Ignore our own announcements
-        if (isHosting && hostInfo && data.roomId === hostInfo.roomId) return;
+        console.log('[DISCOVERY] announce received from', rinfo.address + ':' + rinfo.port, '- roomId:', data.roomId, 'name:', data.roomName, 'participants:', data.participants);
+        // All peers receive all announcements via shared UDP listener
+        // Host filters out their own room to avoid showing it in their own list
+        if (isHosting && hostInfo && data.roomId === hostInfo.roomId) {
+          console.log('[DISCOVERY] ignoring own announcement');
+          return;
+        }
         roomMap.set(data.roomId, { data, lastSeen: Date.now() });
         sendRoomsUpdate();
       }
     } catch (e) {
-      // ignore
+      console.error('[DISCOVERY] Failed to parse message:', e.message);
     }
   });
 
-  discoverySocket.bind(MULTICAST_PORT, () => {
+  // Bind to all interfaces (0.0.0.0) to receive multicast on any network adapter
+  discoverySocket.bind(MULTICAST_PORT, '0.0.0.0', () => {
     try {
+      const localIp = getLocalIp();
+      console.log('[DISCOVERY] Binding to 0.0.0.0:' + MULTICAST_PORT + ' (local IP:', localIp + ')');
+      
+      // Join multicast group
       discoverySocket.addMembership(MULTICAST_ADDR);
+      
+      // Enable loopback so sender also receives (useful for testing)
       discoverySocket.setMulticastLoopback(true);
-      console.log('[DISCOVERY] Bound on', MULTICAST_PORT, 'and joined group', MULTICAST_ADDR);
+      
+      // Set TTL for multicast packets (1 = local network only)
+      discoverySocket.setMulticastTTL(1);
+      
+      // Try to set multicast interface to local IP (optional, may fail on some systems)
+      try {
+        discoverySocket.setMulticastInterface(localIp);
+        console.log('[DISCOVERY] Multicast interface set to', localIp);
+      } catch (e) {
+        console.log('[DISCOVERY] Could not set multicast interface (this is usually OK):', e.message);
+      }
+      
+      console.log('[DISCOVERY] Successfully joined multicast group', MULTICAST_ADDR);
+      console.log('[DISCOVERY] Multicast ready - listening for room announcements');
     } catch (e) {
-      console.error('Failed to join multicast group:', e);
+      console.error('[DISCOVERY] Failed to join multicast group:', e);
+      console.error('[DISCOVERY] Possible causes:');
+      console.error('  - Windows Firewall blocking UDP port', MULTICAST_PORT);
+      console.error('  - Network adapter does not support multicast');
+      console.error('  - Insufficient permissions');
+      console.error('  - Error details:', e.message);
     }
+  });
+
+  // Log when socket is actually listening
+  discoverySocket.on('listening', () => {
+    const address = discoverySocket.address();
+    console.log('[DISCOVERY] Socket listening on', address.address + ':' + address.port);
+    console.log('[DISCOVERY] Ready to receive multicast packets');
   });
 
   if (!pruneInterval) {
@@ -141,12 +181,19 @@ function stopDiscovery() {
   }
 }
 
+// Start announcing this peer's room via UDP multicast
+// Uses the shared discoverySocket (created at startup) to broadcast announcements
 function startAnnouncing(roomId, roomName, wsPort) {
   const ip = getLocalIp();
   hostInfo = { roomId, roomName, hostIp: ip, wsPort };
   if (announceInterval) clearInterval(announceInterval);
-  announceInterval = setInterval(() => {
-    if (!discoverySocket) return;
+  
+  // Send first announcement immediately
+  const sendAnnouncement = () => {
+    if (!discoverySocket) {
+      console.error('[ANNOUNCE] Cannot send - discovery socket not ready');
+      return;
+    }
     const participants = 1 + clientIdToSocket.size;
     const payload = JSON.stringify({
       t: 'announce',
@@ -159,14 +206,26 @@ function startAnnouncing(roomId, roomName, wsPort) {
     });
     const buf = Buffer.from(payload);
     try {
-      discoverySocket.send(buf, 0, buf.length, MULTICAST_PORT, MULTICAST_ADDR);
-      // Throttle logs to avoid spam: log every tick
-      console.log('[ANNOUNCE] roomId:', roomId, 'name:', roomName, 'at', `${ip}:${wsPort}`, 'participants:', participants);
+      // Send to multicast address - all peers listening on this group will receive it
+      discoverySocket.send(buf, 0, buf.length, MULTICAST_PORT, MULTICAST_ADDR, (err) => {
+        if (err) {
+          console.error('[ANNOUNCE] Send error:', err.message);
+          console.error('[ANNOUNCE] Check Windows Firewall allows UDP', MULTICAST_PORT);
+          console.error('[ANNOUNCE] Verify multicast is enabled on network adapter');
+        } else {
+          console.log('[ANNOUNCE] Sent to', MULTICAST_ADDR + ':' + MULTICAST_PORT, '- roomId:', roomId, 'name:', roomName, 'participants:', participants);
+        }
+      });
     } catch (e) {
-      // ignore transient send errors
+      console.error('[ANNOUNCE] Send exception:', e.message);
     }
-  }, 2000);
-  console.log('[ANNOUNCE] started for room', roomId, 'on', `${ip}:${wsPort}`);
+  };
+  
+  // Send immediately, then every 2 seconds
+  sendAnnouncement();
+  announceInterval = setInterval(sendAnnouncement, 2000);
+  console.log('[ANNOUNCE] Started announcing room', roomId, 'name:', roomName, 'at', `${ip}:${wsPort}`);
+  console.log('[ANNOUNCE] Sending to multicast group', MULTICAST_ADDR + ':' + MULTICAST_PORT);
 }
 
 function stopAnnouncing() {
@@ -299,8 +358,10 @@ ipcMain.handle('host:stop', () => {
 
 app.whenReady().then(() => {
   createWindow();
+  // Start discovery immediately at app launch - all peers listen for room announcements
+  // This happens before any room is created, ensuring peers can discover rooms at any time
   startDiscovery();
-  console.log('[APP] ready');
+  console.log('[APP] ready - discovery socket active');
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

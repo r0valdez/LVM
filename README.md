@@ -56,8 +56,59 @@ lan-video-meeting/
 - Participant exit leaves meeting without ending the room
 
 ## Troubleshooting
+
+### UDP Multicast Discovery Issues
+
+**How UDP Multicast Works:**
+- All peers join multicast group `239.255.255.250` on UDP port `55555`
+- Host sends announcements every 2 seconds to this multicast address
+- All peers on the same LAN receive these announcements automatically
+- No central server needed - pure peer-to-peer discovery
+
+**What Can Block Multicast Packets:**
+
+1. **Windows Firewall** (Most Common)
+   - Windows will prompt to allow the app when first run
+   - If blocked, manually add rules:
+     - Open Windows Defender Firewall → Advanced Settings
+     - Inbound Rules → New Rule → Port → UDP → Specific: `55555`
+     - Allow the connection → Apply to all profiles
+   - Check console logs for `[ANNOUNCE] Send error` or `[DISCOVERY] Failed to join multicast group`
+
+2. **Network Switches/Routers**
+   - Most modern switches support multicast (IGMP)
+   - Older or managed switches may block multicast traffic
+   - Check if other multicast apps work on your network
+   - Some corporate networks disable multicast for security
+
+3. **Network Isolation**
+   - Peers must be on the **same subnet** (e.g., both on `192.168.1.x`)
+   - VLANs or network segmentation can isolate peers
+   - Different subnets require multicast routing (rarely configured)
+
+4. **Network Adapter Settings**
+   - Some network adapters have multicast filtering disabled
+   - Check adapter properties → Advanced → "Multicast Receive" should be enabled
+   - Virtual network adapters (VPNs, VMs) may not support multicast properly
+
+5. **Antivirus/Security Software**
+   - May block UDP traffic or network discovery
+   - Temporarily disable to test, then add exception
+
+6. **Multiple Network Interfaces**
+   - If PC has multiple network adapters, multicast may bind to wrong interface
+   - Check console logs for which IP address is being used
+   - Ensure all peers are on the same physical network segment
+
+**Testing Multicast:**
+- Check console logs: `[DISCOVERY] Socket listening on` should appear
+- Host should see: `[ANNOUNCE] roomId: ...` every 2 seconds
+- Peers should see: `[DISCOVERY] announce received` when host creates room
+- If no announcements received, check Windows Firewall first
+
+**Other Issues:**
 - If rooms do not appear: check multicast not blocked on the network and Windows Firewall rules
 - If media fails: ensure camera/microphone permissions are allowed for Electron
-- WebRTC is LAN-only (no ICE servers); it won’t connect across subnets without direct routing
+- WebRTC is LAN-only (no ICE servers); it won't connect across subnets without direct routing
 
 
