@@ -60,7 +60,7 @@ function createTray() {
   tray = new Tray(icon);
   updateTrayIcon();
   
-  tray.setToolTip('LAN Video Meeting');
+  tray.setToolTip('LVM');
   tray.on('click', () => {
     if (mainWindow) {
       if (mainWindow.isVisible()) {
@@ -197,7 +197,7 @@ function showNotification(message) {
   const { Notification } = require('electron');
   if (Notification.isSupported()) {
     new Notification({
-      title: 'LAN Video Meeting',
+      title: 'LVM',
       body: message,
       silent: false
     }).show();
@@ -228,11 +228,7 @@ function startDiscovery() {
       if (data && data.t === 'announce' && data.roomId) {
         console.log('[DISCOVERY] announce received from', rinfo.address + ':' + rinfo.port, '- roomId:', data.roomId, 'name:', data.roomName, 'participants:', data.participants);
         // All peers receive all announcements via shared UDP listener
-        // Host filters out their own room to avoid showing it in their own list
-        if (isHosting && hostInfo && data.roomId === hostInfo.roomId) {
-          console.log('[DISCOVERY] ignoring own announcement');
-          return;
-        }
+        // Host can also see their own room in the list
         roomMap.set(data.roomId, { data, lastSeen: Date.now() });
         sendRoomsUpdate();
       } else if (data && data.t === 'peer-presence' && data.peerId) {
