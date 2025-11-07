@@ -8,11 +8,12 @@
   "scripts": {
     "start": "electron .",
     "prepare-cache": "node scripts/prepare-electron-cache.js",
-    "build": "electron-builder",
-    "build:win": "electron-builder --win",
-    "build:dir": "electron-builder --dir",
-    "build:offline": "electron-builder --dir",
-    "dist": "electron-builder --publish=never",
+    "prepare-offline": "node scripts/prepare-offline-build.js",
+    "build": "node scripts/build-offline.js",
+    "build:win": "node scripts/build-offline.js --win",
+    "build:dir": "node scripts/build-offline.js --dir",
+    "build:offline": "node scripts/build-offline.js --dir",
+    "dist": "node scripts/build-offline.js --publish=never",
     "prebuild": "node scripts/prepare-electron-cache.js"
   },
   "dependencies": {
@@ -26,6 +27,7 @@
     "appId": "com.lvm.app",
     "productName": "LVM",
     "electronVersion": "31.7.7",
+    "electronDist": "./node_modules/electron/dist",
     "directories": {
       "output": "dist"
     },

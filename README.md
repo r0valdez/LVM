@@ -72,26 +72,134 @@ To add a custom icon, place `icon.ico` in a `build/` folder. If no icon is provi
 
 **Important:** `electron-builder` requires Electron binaries to be cached locally. The first build needs internet to download them (~100-200MB).
 
-**First Time Setup (Requires Internet - One Time Only):**
+#### Step 1: Prepare on PC with Internet (One Time Only)
+
+On a PC with internet connection, run:
+
 ```bash
 npm install                    # Install all dependencies including Electron
 npm run build:dir             # This downloads and caches Electron binaries to local cache
 ```
 
-**After First Build (Works Completely Offline):**
+This will:
+- Install all npm dependencies (including Electron and electron-builder)
+- Download and cache Electron binaries (~100-200MB) to your local cache directory
+
+#### Step 2: Check What to Copy
+
+Run the preparation script to see what needs to be copied:
+
 ```bash
-npm run build:dir             # Uses cached Electron binaries, no internet needed
-npm run build:win            # Works offline
-npm run build                # Works offline
+npm run prepare-offline
 ```
 
-**Cache Location:**
+This will show you:
+- Project files status
+- `node_modules/` directory size and location
+- Electron cache location and size
+- Detailed copy instructions
+
+#### Step 3: Copy Files to Offline PC
+
+You need to copy **3 things** to the offline PC:
+
+**1. Entire Project Folder (including `node_modules/`):**
+   - Copy the entire project directory including:
+     - All source files (`electron/`, `renderer/`, `scripts/`, etc.)
+     - `node_modules/` directory (required!)
+     - `package.json` and `package-lock.json`
+   - You can zip the entire project folder and extract it on the offline PC
+
+**2. Electron Cache Directory:**
+   - **Windows**: Copy from `%LOCALAPPDATA%\electron-builder\Cache` 
+     - Full path: `C:\Users\<YourUsername>\AppData\Local\electron-builder\Cache`
+   - **macOS**: Copy from `~/Library/Caches/electron-builder`
+   - **Linux**: Copy from `~/.cache/electron-builder`
+   - Copy the **entire `Cache` folder** to the **same location** on the offline PC
+   - Create the directory structure if it doesn't exist on the offline PC
+
+**3. (Optional) npm Cache for electron-builder:**
+   - If you want to be extra safe, also copy npm's cache for electron-builder
+   - **Windows**: `%APPDATA%\npm-cache` or `%LOCALAPPDATA%\npm-cache`
+   - **macOS/Linux**: `~/.npm`
+
+#### Step 4: Build on Offline PC
+
+On the offline PC:
+
+1. **Verify cache location exists:**
+   - Check that the Electron cache was copied to the correct location
+   - Run `npm run prepare-offline` to verify
+
+2. **Build (no internet required):**
+   ```bash
+   npm run build:dir             # Uses cached Electron binaries, no internet needed
+   npm run build:win            # Works offline
+   npm run build                # Works offline
+   ```
+   
+   **Important:** The build scripts now use a wrapper that forces offline mode and prevents any GitHub downloads. If you still see download attempts, verify:
+   - `node_modules/electron/dist` exists (Electron is installed)
+   - Electron cache is in the correct location (run `npm run prepare-offline` to verify)
+
+#### Cache Locations Reference
+
+**Electron Cache (Required):**
 - **Windows**: `%LOCALAPPDATA%\electron-builder\Cache\electron\31.7.7\electron-v31.7.7-win32-x64.zip`
 - **macOS**: `~/Library/Caches/electron-builder/electron/31.7.7/electron-v31.7.7-darwin-x64.zip`
 - **Linux**: `~/.cache/electron-builder/electron/31.7.7/electron-v31.7.7-linux-x64.zip`
 
-**Copying Cache from Another Machine:**
-If you have the cache on another machine, you can copy the entire `electron-builder/Cache` folder to the same location on the offline machine to enable offline builds immediately.
+**What Gets Cached:**
+- Electron binaries (~100-200MB)
+- Build tools (if used during first build)
+- Code signing tools (if used)
+
+#### Quick Transfer Checklist
+
+- [ ] Run `npm install` and `npm run build:dir` on PC with internet
+- [ ] Copy entire project folder (with `node_modules/`) to offline PC
+- [ ] Copy `electron-builder/Cache` folder to same location on offline PC
+- [ ] Verify cache exists on offline PC using `npm run prepare-offline`
+- [ ] Verify `node_modules/electron/dist` exists on offline PC
+- [ ] Run `npm run build:dir` on offline PC (should work without internet)
+
+#### Troubleshooting Offline Builds
+
+**If build still tries to download from GitHub:**
+
+1. **Verify Electron is installed:**
+   ```bash
+   # Check if Electron exists in node_modules
+   dir node_modules\electron\dist    # Windows
+   ls node_modules/electron/dist     # macOS/Linux
+   ```
+
+2. **Verify cache location:**
+   ```bash
+   npm run prepare-offline
+   ```
+   This will show the exact cache path and verify it exists.
+
+3. **Check cache structure:**
+   The cache should contain:
+   ```
+   Cache/
+   └── electron/
+       └── 31.7.7/
+           └── electron-v31.7.7-win32-x64.zip
+   ```
+
+4. **Force rebuild:**
+   If cache exists but build still fails, try:
+   ```bash
+   # Clear electron-builder temp files
+   rmdir /s /q %LOCALAPPDATA%\electron-builder\Cache\tmp    # Windows
+   rm -rf ~/Library/Caches/electron-builder/Cache/tmp     # macOS
+   rm -rf ~/.cache/electron-builder/Cache/tmp              # Linux
+   
+   # Then rebuild
+   npm run build:dir
+   ```
 
 ### Notes
 - The first build downloads Electron binaries (~100-200MB) and caches them locally
