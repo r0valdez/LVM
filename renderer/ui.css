@@ -148,6 +148,7 @@ video[data-peer="self"]:hover {
   align-items: center;
   gap: 8px;
   padding: 4px 0;
+  width: 100%;
 }
 
 .peer-item input[type="checkbox"] {
@@ -205,6 +206,18 @@ video[data-peer="self"]:hover {
   font-size: 0.85em;
   margin-left: 12px;
   font-style: italic;
+}
+
+.peer-invite-btn {
+  margin-left: auto;
+  padding: 4px 12px;
+  font-size: 12px;
+  min-width: 60px;
+}
+
+.peer-invite-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .notification-banner {

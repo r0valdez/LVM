@@ -128,6 +128,32 @@ function renderPeers(peers) {
     
     item.appendChild(checkbox);
     item.appendChild(label);
+    
+    // Add invite button for host only
+    if (currentRoom && currentRoom.mode === 'host' && !peer.isCurrentUser) {
+      const inviteBtn = document.createElement('button');
+      inviteBtn.textContent = 'Invite';
+      inviteBtn.className = 'peer-invite-btn';
+      inviteBtn.disabled = !!peer.roomName; // Disable if peer is already in a room
+      inviteBtn.onclick = async () => {
+        if (!currentRoom || currentRoom.mode !== 'host') return;
+        try {
+          log('[UI][renderer] Sending invitation to', peer.peerId, 'for room', currentRoom.roomName);
+          await window.lan.peerSendInvitation(
+            currentRoom.roomId,
+            currentRoom.roomName,
+            currentRoom.hostIp,
+            currentRoom.wsPort,
+            [peer.peerId]
+          );
+          log('[FLOW][renderer] Sent invitation to', peer.peerId);
+        } catch (e) {
+          console.error('[FLOW][renderer] Error sending invitation:', e);
+        }
+      };
+      item.appendChild(inviteBtn);
+    }
+    
     peerListEl.appendChild(item);
   }
 }
