@@ -155,6 +155,19 @@ video[data-peer="self"]:hover {
   accent-color: #2b4fff;
 }
 
+.peer-item input[type="checkbox"]:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.peer-item-current {
+  opacity: 0.9;
+}
+
+.peer-item-current .peer-name {
+  font-weight: 500;
+}
+
 .peer-item label {
   cursor: pointer;
   font-size: 13px;
@@ -178,6 +191,20 @@ video[data-peer="self"]:hover {
   font-size: 11px;
   color: #9ca3af;
   font-family: 'Courier New', monospace;
+}
+
+.peer-current-indicator {
+  color: #2b4fff;
+  font-size: 0.9em;
+  margin-left: 6px;
+  font-weight: 600;
+}
+
+.peer-room-status {
+  color: #2b4fff;
+  font-size: 0.85em;
+  margin-left: 12px;
+  font-style: italic;
 }
 
 .notification-banner {

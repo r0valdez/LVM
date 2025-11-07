@@ -11,6 +11,7 @@ const DEFAULT_WS_PORT = 57788;
 let mainWindow = null;
 let tray = null;
 let isInMeeting = false; // Track if user is in a meeting
+let currentRoomName = null; // Track current room name for peer announcements
 
 // Discovery state (rooms seen on LAN)
 // All peers (hosts and participants) share the same UDP multicast listener
@@ -182,7 +183,18 @@ function sendRoomsUpdate() {
 
 function sendPeersUpdate() {
   const peers = Array.from(peerMap.values()).map((p) => p.data);
-  console.log('[DISCOVERY] Sending peers update:', peers.length, 'peers');
+  
+  // Add current user to the list if peer announcing is active
+  if (myPeerInfo) {
+    const currentUser = {
+      ...myPeerInfo,
+      roomName: currentRoomName || null,
+      isCurrentUser: true
+    };
+    peers.push(currentUser);
+  }
+  
+  console.log('[DISCOVERY] Sending peers update:', peers.length, 'peers (including current user)');
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('peers-update', peers);
   } else {
@@ -556,6 +568,7 @@ function startPeerAnnouncing(peerId, peerName) {
       peerId,
       peerName,
       peerIp: ip,
+      roomName: currentRoomName || null, // Include room name if in a room
       ts: Date.now()
     });
     const buf = Buffer.from(payload);
@@ -639,6 +652,7 @@ ipcMain.handle('host:start', (e, { roomId, roomName, wsPort }) => {
     startAnnouncing(roomId, roomName, wsPort || DEFAULT_WS_PORT);
     isHosting = true;
     isInMeeting = true;
+    currentRoomName = roomName; // Track room name for peer announcements
     updateTrayIcon();
     return { ok: true, hostIp: getLocalIp(), wsPort: wsPort || DEFAULT_WS_PORT };
   } catch (e2) {
@@ -654,14 +668,16 @@ ipcMain.handle('host:stop', () => {
   stopWsServer(true);
   isHosting = false;
   isInMeeting = false;
+  currentRoomName = null; // Clear room name
   updateTrayIcon();
   return { ok: true };
 });
 
 // Track meeting state from renderer
-ipcMain.handle('meeting:join', () => {
-  console.log('[IPC] meeting:join');
+ipcMain.handle('meeting:join', (e, roomName) => {
+  console.log('[IPC] meeting:join', roomName);
   isInMeeting = true;
+  currentRoomName = roomName || null; // Set room name when joining
   updateTrayIcon();
   return { ok: true };
 });
@@ -669,6 +685,7 @@ ipcMain.handle('meeting:join', () => {
 ipcMain.handle('meeting:leave', () => {
   console.log('[IPC] meeting:leave');
   isInMeeting = false;
+  currentRoomName = null; // Clear room name
   updateTrayIcon();
   return { ok: true };
 });

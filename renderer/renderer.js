@@ -46,6 +46,13 @@ function renderPeers(peers) {
   const list = peers || [];
   const currentPeerIds = new Set(list.map(p => p.peerId));
   
+  // Find current user's peerId and remove from selected peers (can't invite yourself)
+  const currentUser = list.find(p => p.isCurrentUser);
+  if (currentUser && selectedPeerIds.has(currentUser.peerId)) {
+    log('[UI][renderer] Removing current user from selection (cannot invite yourself)');
+    selectedPeerIds.delete(currentUser.peerId);
+  }
+  
   // Clean up selected peers that are no longer online
   for (const peerId of selectedPeerIds) {
     if (!currentPeerIds.has(peerId)) {
@@ -67,11 +74,15 @@ function renderPeers(peers) {
   for (const peer of list) {
     const item = document.createElement('div');
     item.className = 'peer-item';
+    if (peer.isCurrentUser) {
+      item.classList.add('peer-item-current');
+    }
     
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
     checkbox.id = `peer-${peer.peerId}`;
     checkbox.checked = selectedPeerIds.has(peer.peerId);
+    checkbox.disabled = peer.isCurrentUser || false; // Disable checkbox for current user
     checkbox.onchange = (e) => {
       if (e.target.checked) {
         selectedPeerIds.add(peer.peerId);
@@ -84,6 +95,9 @@ function renderPeers(peers) {
     const label = document.createElement('label');
     label.htmlFor = `peer-${peer.peerId}`;
     label.className = 'peer-name';
+    if (peer.isCurrentUser) {
+      label.classList.add('peer-name-current');
+    }
     
     const nameSpan = document.createElement('span');
     nameSpan.textContent = peer.peerName || 'Unknown';
@@ -95,6 +109,22 @@ function renderPeers(peers) {
     
     label.appendChild(nameSpan);
     label.appendChild(ipSpan);
+    
+    // Show "You" indicator for current user
+    if (peer.isCurrentUser) {
+      const currentUserSpan = document.createElement('span');
+      currentUserSpan.textContent = '(You)';
+      currentUserSpan.className = 'peer-current-indicator';
+      label.appendChild(currentUserSpan);
+    }
+    
+    // Show room status if peer is in a room
+    if (peer.roomName) {
+      const roomStatusSpan = document.createElement('span');
+      roomStatusSpan.textContent = `joined ${peer.roomName}`;
+      roomStatusSpan.className = 'peer-room-status';
+      label.appendChild(roomStatusSpan);
+    }
     
     item.appendChild(checkbox);
     item.appendChild(label);
@@ -174,7 +204,7 @@ async function onCreateRoom() {
   const customRoomName = roomNameInput.value;
   const host = await Discovery.startHosting(57788, customRoomName);
   const hostIp = await window.lan.getLocalIp();
-  currentRoom = { mode: 'host', roomId: host.roomId, hostIp, wsPort: host.wsPort };
+  currentRoom = { mode: 'host', roomId: host.roomId, roomName: host.roomName, hostIp, wsPort: host.wsPort };
   
   // Send invitations to selected peers
   if (selectedPeerIds.size > 0) {
@@ -282,7 +312,7 @@ async function onCreateRoom() {
     log('[FLOW][renderer][HOST] signaling.connect to own server');
     await signaling.connect();
     // Notify main process that we're in a meeting (host:start already did this, but ensure it)
-    await window.lan.meetingJoin();
+    await window.lan.meetingJoin(currentRoom.roomName);
   } catch (e) {
     console.error('[FLOW][renderer][HOST] signaling connect failed', e);
     alert('Failed to connect to own signaling server');
@@ -293,7 +323,7 @@ async function onCreateRoom() {
 async function joinRoom(room) {
   if (currentRoom) return;
   log('[FLOW][renderer] joinRoom', room.roomId, `${room.hostIp}:${room.wsPort}`);
-  currentRoom = { mode: 'join', roomId: room.roomId, hostIp: room.hostIp, wsPort: room.wsPort };
+  currentRoom = { mode: 'join', roomId: room.roomId, roomName: room.roomName, hostIp: room.hostIp, wsPort: room.wsPort };
   createRoomBtn.disabled = true;
   exitBtn.disabled = false;
 
@@ -359,7 +389,7 @@ async function joinRoom(room) {
     log('[FLOW][renderer] signaling.connect');
     await signaling.connect();
     // Notify main process that we're in a meeting
-    await window.lan.meetingJoin();
+    await window.lan.meetingJoin(currentRoom.roomName);
   } catch (e) {
     console.error('[FLOW][renderer] signaling connect failed', e);
     alert('Failed to connect to room');
