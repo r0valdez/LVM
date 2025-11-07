@@ -233,32 +233,43 @@ async function onCreateRoom() {
     handlers: {
       onWelcome: async ({ participants }) => {
         log('[FLOW][renderer][HOST] onWelcome participants', participants.length);
-        // Host creates offers to existing participants (host is always the offerer)
+        // Host creates offers to existing participants using deterministic rule
+        // Lower clientId creates offer to avoid duplicate connections
         for (const p of participants) {
           // Only create offer if we don't already have a connection to this peer
           if (!rtc.hasPeer(p.clientId)) {
-            try {
-              const offer = await rtc.createOfferTo(p.clientId, (candidate) => signaling.sendIce(p.clientId, candidate));
-              if (offer) {
-                signaling.sendOffer(p.clientId, offer);
+            // Only create offer if host has lower clientId (deterministic rule for full mesh)
+            if (clientId < p.clientId) {
+              try {
+                const offer = await rtc.createOfferTo(p.clientId, (candidate) => signaling.sendIce(p.clientId, candidate));
+                if (offer) {
+                  signaling.sendOffer(p.clientId, offer);
+                }
+              } catch (e) {
+                log('[FLOW][renderer][HOST] Error creating offer to', p.clientId, ':', e.message);
               }
-            } catch (e) {
-              log('[FLOW][renderer][HOST] Error creating offer to', p.clientId, ':', e.message);
+            } else {
+              log('[FLOW][renderer][HOST] Waiting for', p.clientId, 'to create offer (they have lower ID)');
             }
           }
         }
       },
       onPeerJoined: async ({ clientId: peerId }) => {
         log('[FLOW][renderer][HOST] onPeerJoined', peerId);
-        // When new peer joins, host creates offer to them (host is always the offerer)
+        // When new peer joins, host creates offer if host has lower clientId
+        // This ensures full mesh connectivity with deterministic offer creation
         if (!rtc.hasPeer(peerId)) {
-          try {
-            const offer = await rtc.createOfferTo(peerId, (candidate) => signaling.sendIce(peerId, candidate));
-            if (offer) {
-              signaling.sendOffer(peerId, offer);
+          if (clientId < peerId) {
+            try {
+              const offer = await rtc.createOfferTo(peerId, (candidate) => signaling.sendIce(peerId, candidate));
+              if (offer) {
+                signaling.sendOffer(peerId, offer);
+              }
+            } catch (e) {
+              log('[FLOW][renderer][HOST] Error creating offer to', peerId, ':', e.message);
             }
-          } catch (e) {
-            log('[FLOW][renderer][HOST] Error creating offer to', peerId, ':', e.message);
+          } else {
+            log('[FLOW][renderer][HOST] Waiting for', peerId, 'to create offer (they have lower ID)');
           }
         }
       },
@@ -336,14 +347,47 @@ async function joinRoom(room) {
     handlers: {
       onWelcome: async ({ participants }) => {
         log('[FLOW][renderer] onWelcome participants', participants.length);
-        // Peer waits for host to create offers - don't create offers here
-        // The host will create offers, and we'll answer them
-        log('[FLOW][renderer] Waiting for host to initiate WebRTC connection');
+        // Participant creates offers to all existing participants for full mesh
+        // Use deterministic rule: lower clientId creates offer to avoid conflicts
+        for (const p of participants) {
+          if (!rtc.hasPeer(p.clientId)) {
+            // Only create offer if our clientId is "lower" (lexicographically) to avoid duplicate offers
+            // If the other peer has a lower ID, they will create the offer instead
+            if (clientId < p.clientId) {
+              try {
+                log('[FLOW][renderer] Creating offer to existing participant', p.clientId);
+                const offer = await rtc.createOfferTo(p.clientId, (candidate) => signaling.sendIce(p.clientId, candidate));
+                if (offer) {
+                  signaling.sendOffer(p.clientId, offer);
+                }
+              } catch (e) {
+                log('[FLOW][renderer] Error creating offer to', p.clientId, ':', e.message);
+              }
+            } else {
+              log('[FLOW][renderer] Waiting for', p.clientId, 'to create offer (they have lower ID)');
+            }
+          }
+        }
       },
       onPeerJoined: async ({ clientId: peerId }) => {
         log('[FLOW][renderer] onPeerJoined', peerId);
-        // Peer waits for others to create offers - don't create offers here
-        log('[FLOW][renderer] Waiting for', peerId, 'to initiate WebRTC connection');
+        // When a new peer joins, create offer to them if we have lower clientId
+        // This ensures full mesh connectivity
+        if (!rtc.hasPeer(peerId)) {
+          if (clientId < peerId) {
+            try {
+              log('[FLOW][renderer] Creating offer to new participant', peerId);
+              const offer = await rtc.createOfferTo(peerId, (candidate) => signaling.sendIce(peerId, candidate));
+              if (offer) {
+                signaling.sendOffer(peerId, offer);
+              }
+            } catch (e) {
+              log('[FLOW][renderer] Error creating offer to', peerId, ':', e.message);
+            }
+          } else {
+            log('[FLOW][renderer] Waiting for', peerId, 'to create offer (they have lower ID)');
+          }
+        }
       },
       onPeerLeft: ({ clientId: peerId }) => {
         log('[FLOW][renderer] onPeerLeft', peerId);
