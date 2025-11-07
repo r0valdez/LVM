@@ -654,6 +654,7 @@ ipcMain.handle('host:start', (e, { roomId, roomName, wsPort }) => {
     isInMeeting = true;
     currentRoomName = roomName; // Track room name for peer announcements
     updateTrayIcon();
+    sendPeersUpdate(); // Update peer list to show current user's room status
     return { ok: true, hostIp: getLocalIp(), wsPort: wsPort || DEFAULT_WS_PORT };
   } catch (e2) {
     console.error('[IPC] host:start failed', e2);
@@ -670,6 +671,7 @@ ipcMain.handle('host:stop', () => {
   isInMeeting = false;
   currentRoomName = null; // Clear room name
   updateTrayIcon();
+  sendPeersUpdate(); // Update peer list to remove current user's room status
   return { ok: true };
 });
 
@@ -679,6 +681,7 @@ ipcMain.handle('meeting:join', (e, roomName) => {
   isInMeeting = true;
   currentRoomName = roomName || null; // Set room name when joining
   updateTrayIcon();
+  sendPeersUpdate(); // Update peer list to show current user's room status
   return { ok: true };
 });
 
@@ -687,6 +690,7 @@ ipcMain.handle('meeting:leave', () => {
   isInMeeting = false;
   currentRoomName = null; // Clear room name
   updateTrayIcon();
+  sendPeersUpdate(); // Update peer list to remove current user's room status
   return { ok: true };
 });
 
