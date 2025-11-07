@@ -17,13 +17,61 @@ Windows desktop app for local-network video meetings with peer-to-peer media and
 npm install
 ```
 
-2) Start the app
+2) Start the app (development mode)
 
 ```bash
 npm start
 ```
 
 Run on two Windows PCs on the same LAN. Allow the app through Windows Firewall for UDP 55555 and TCP 57788 when prompted.
+
+## Building Standalone Executable
+
+### Install electron-builder (if not already installed)
+
+```bash
+npm install
+```
+
+### Build Options
+
+**Build for Windows (creates both installer and portable):**
+```bash
+npm run build:win
+```
+
+**Build portable executable only (no installer):**
+```bash
+npm run build:dir
+```
+
+**Build with all default settings:**
+```bash
+npm run build
+```
+
+### Output
+
+Built executables will be in the `dist/` folder:
+- **NSIS Installer**: `LVM Setup 1.0.0.exe` - Full installer with options to choose installation directory
+- **Portable**: `LVM-1.0.0-portable.exe` - Standalone executable that can run without installation
+
+### Build Configuration
+
+The build is configured in `package.json` under the `build` section:
+- **App ID**: `com.lvm.app`
+- **Product Name**: `LVM`
+- **Output Directory**: `dist/`
+- **Windows Targets**: NSIS installer (x64) and Portable executable (x64)
+
+### Icon (Optional)
+
+To add a custom icon, place `icon.ico` in a `build/` folder. If no icon is provided, electron-builder will use a default icon.
+
+### Notes
+- The first build may take longer as it downloads Electron binaries
+- Built executables are self-contained and don't require Node.js or npm to run
+- The portable version can be run directly without installation
 
 ## How It Works
 - Host clicks Create Room: starts WebSocket server and begins UDP heartbeat announces every 2s
