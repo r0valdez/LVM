@@ -16,6 +16,7 @@ let clientName = 'Guest';
 let signaling = null;
 let rtc = null;
 let selectedPeerIds = new Set(); // Track selected peers for invitation
+let shownInvitations = new Set(); // Track shown invitations to prevent duplicates
 
 async function init() {
   clientName = await getDefaultRoomName();
@@ -147,6 +148,8 @@ function renderPeers(peers) {
             [peer.peerId]
           );
           log('[FLOW][renderer] Sent invitation to', peer.peerId);
+          // Show notification on host side
+          showInAppNotification(`Invite was sent to ${peer.peerName || peer.peerId}`);
         } catch (e) {
           console.error('[FLOW][renderer] Error sending invitation:', e);
         }
@@ -162,6 +165,18 @@ function handleInvitationReceived(data) {
   log('[FLOW][renderer] Invitation received', data);
   const { roomId, roomName, hostIp, wsPort } = data;
   
+  // Create unique key for this invitation to prevent duplicates
+  const invitationKey = `${roomId}-${hostIp}-${wsPort}`;
+  
+  // Check if we've already shown this invitation
+  if (shownInvitations.has(invitationKey)) {
+    log('[FLOW][renderer] Invitation already shown, skipping duplicate');
+    return;
+  }
+  
+  // Mark this invitation as shown
+  shownInvitations.add(invitationKey);
+  
   // Show notification - user can manually join by clicking the room button
   showInAppNotification(`You've invited to ${roomName}. Please join now.`);
   
@@ -170,6 +185,15 @@ function handleInvitationReceived(data) {
 }
 
 function showInAppNotification(message) {
+  // Check if a notification with the same message already exists
+  const existingNotifications = document.querySelectorAll('.notification-banner .notification-message');
+  for (const existing of existingNotifications) {
+    if (existing.textContent === message) {
+      log('[UI][renderer] Notification with same message already exists, skipping duplicate');
+      return;
+    }
+  }
+  
   // Create a notification banner
   const notification = document.createElement('div');
   notification.className = 'notification-banner';
