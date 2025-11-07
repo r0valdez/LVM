@@ -68,8 +68,34 @@ The build is configured in `package.json` under the `build` section:
 
 To add a custom icon, place `icon.ico` in a `build/` folder. If no icon is provided, electron-builder will use a default icon.
 
+### Offline Build Setup
+
+**Important:** `electron-builder` requires Electron binaries to be cached locally. The first build needs internet to download them (~100-200MB).
+
+**First Time Setup (Requires Internet - One Time Only):**
+```bash
+npm install                    # Install all dependencies including Electron
+npm run build:dir             # This downloads and caches Electron binaries to local cache
+```
+
+**After First Build (Works Completely Offline):**
+```bash
+npm run build:dir             # Uses cached Electron binaries, no internet needed
+npm run build:win            # Works offline
+npm run build                # Works offline
+```
+
+**Cache Location:**
+- **Windows**: `%LOCALAPPDATA%\electron-builder\Cache\electron\31.7.7\electron-v31.7.7-win32-x64.zip`
+- **macOS**: `~/Library/Caches/electron-builder/electron/31.7.7/electron-v31.7.7-darwin-x64.zip`
+- **Linux**: `~/.cache/electron-builder/electron/31.7.7/electron-v31.7.7-linux-x64.zip`
+
+**Copying Cache from Another Machine:**
+If you have the cache on another machine, you can copy the entire `electron-builder/Cache` folder to the same location on the offline machine to enable offline builds immediately.
+
 ### Notes
-- The first build may take longer as it downloads Electron binaries
+- The first build downloads Electron binaries (~100-200MB) and caches them locally
+- After the first build, all subsequent builds work completely offline
 - Built executables are self-contained and don't require Node.js or npm to run
 - The portable version can be run directly without installation
 
