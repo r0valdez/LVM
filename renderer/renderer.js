@@ -106,14 +106,11 @@ function handleInvitationReceived(data) {
   log('[FLOW][renderer] Invitation received', data);
   const { roomId, roomName, hostIp, wsPort } = data;
   
-  // Show notification
+  // Show notification - user can manually join by clicking the room button
   showInAppNotification(`You've invited to ${roomName}. Please join now.`);
   
-  // Auto-join the room
-  setTimeout(() => {
-    const room = { roomId, roomName, hostIp, wsPort, participants: 0 };
-    joinRoom(room);
-  }, 1000);
+  // Room will appear in the room list via normal announcement mechanism
+  // User can click the room button to join manually
 }
 
 function showInAppNotification(message) {
