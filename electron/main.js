@@ -90,6 +90,8 @@ function updateTrayIcon() {
     {
       label: 'Quit',
       click: () => {
+        console.log('[TRAY] Quit requested from tray menu');
+        // Use app.quit() to trigger proper cleanup handlers
         app.quit();
       }
     }
@@ -549,10 +551,25 @@ function stopWsServer(broadcastEnd) {
       try { ws.send(msg); } catch {}
     }
   }
-  try { wsServer.close(); } catch {}
-  wsServer = null;
+  // Close all client connections first
+  for (const [, ws] of clientIdToSocket.entries()) {
+    try {
+      ws.terminate(); // Force close WebSocket connection
+    } catch (e) {
+      console.error('[WS] Error closing client connection:', e);
+    }
+  }
   clientIdToSocket.clear();
   clientIdToInfo.clear();
+  // Close the server
+  try {
+    wsServer.close(() => {
+      console.log('[WS] Server closed');
+    });
+  } catch (e) {
+    console.error('[WS] Error closing server:', e);
+  }
+  wsServer = null;
 }
 
 // Start announcing peer presence
@@ -719,15 +736,45 @@ app.on('window-all-closed', () => {
 });
 
 // Clean up on app quit
-app.on('before-quit', () => {
+app.on('before-quit', (event) => {
   console.log('[APP] before-quit - cleaning up');
+  
+  // Stop all intervals and timers
   stopAnnouncing();
+  stopPeerAnnouncing();
+  
+  // Close WebSocket server and all connections
   stopWsServer(false);
+  
+  // Stop discovery socket
   stopDiscovery();
+  
+  // Destroy tray
   if (tray) {
     tray.destroy();
     tray = null;
   }
+  
+  // Close main window if it exists
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.removeAllListeners('close');
+    mainWindow.destroy();
+    mainWindow = null;
+  }
+  
+  console.log('[APP] Cleanup complete');
+});
+
+// Force exit on will-quit to ensure process termination
+app.on('will-quit', (event) => {
+  console.log('[APP] will-quit - forcing process exit');
+  // Force process exit to ensure all Electron processes terminate
+  // This prevents zombie processes in production builds
+  // Use setImmediate to allow current event loop to complete
+  setImmediate(() => {
+    console.log('[APP] Exiting process');
+    process.exit(0);
+  });
 });
 
 
