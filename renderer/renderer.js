@@ -120,18 +120,27 @@ function showInAppNotification(message) {
   // Create a notification banner
   const notification = document.createElement('div');
   notification.className = 'notification-banner';
-  notification.textContent = message;
-  document.body.appendChild(notification);
   
-  // Auto-remove after 5 seconds
-  setTimeout(() => {
+  const messageText = document.createElement('span');
+  messageText.className = 'notification-message';
+  messageText.textContent = message;
+  
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'notification-close';
+  closeBtn.innerHTML = '×';
+  closeBtn.setAttribute('aria-label', 'Close notification');
+  closeBtn.onclick = () => {
     notification.classList.add('fade-out');
     setTimeout(() => {
       if (notification.parentNode) {
         notification.parentNode.removeChild(notification);
       }
     }, 300);
-  }, 5000);
+  };
+  
+  notification.appendChild(messageText);
+  notification.appendChild(closeBtn);
+  document.body.appendChild(notification);
 }
 
 function renderRooms(rooms) {
