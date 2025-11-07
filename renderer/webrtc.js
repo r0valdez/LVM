@@ -1,12 +1,37 @@
 import { log } from './utils.js';
+import { CryptoManager } from './crypto.js';
 
 export class WebRTCManager {
-  constructor({ gridEl }) {
+  constructor({ gridEl, roomId }) {
     this.gridEl = gridEl;
     this.localStream = null;
     this.peers = new Map(); // peerId -> { pc, videoEl }
     this.selfVideo = null;
     this.clientId = null;
+    this.crypto = roomId ? new CryptoManager(roomId) : null;
+    this.supportsInsertableStreams = this._checkInsertableStreamsSupport();
+  }
+
+  /**
+   * ============================================================================
+   * INSERTABLE STREAMS SUPPORT CHECK
+   * ============================================================================
+   * Checks if the browser supports WebRTC Insertable Streams API
+   * This API allows us to intercept and encrypt/decrypt encoded frames
+   */
+  _checkInsertableStreamsSupport() {
+    const supported = 
+      typeof RTCRtpSender !== 'undefined' &&
+      'transform' in RTCRtpSender.prototype &&
+      typeof RTCRtpReceiver !== 'undefined' &&
+      'transform' in RTCRtpReceiver.prototype;
+    
+    if (supported) {
+      log('[WEBRTC][renderer] ✅ Insertable Streams API is supported - media encryption enabled');
+    } else {
+      log('[WEBRTC][renderer] ⚠️ Insertable Streams API not supported - using SRTP only (already encrypted)');
+    }
+    return supported;
   }
 
   async initLocal(clientId) {
@@ -26,13 +51,29 @@ export class WebRTCManager {
     }
   }
 
+  /**
+   * ============================================================================
+   * CREATE ENCRYPTED PEER CONNECTION
+   * ============================================================================
+   * Creates a peer connection with media stream encryption using Insertable Streams API.
+   * This encrypts video/audio frames before transmission and decrypts them on receipt.
+   */
   _createPeerConnection(peerId, onSignal) {
     const pc = new RTCPeerConnection({ iceServers: [] });
 
-    // Add local tracks
+    // Add local tracks with encryption
     if (this.localStream) {
       for (const track of this.localStream.getTracks()) {
-        pc.addTrack(track, this.localStream);
+        const sender = pc.addTrack(track, this.localStream);
+        
+        // ========================================================================
+        // OUTGOING STREAM ENCRYPTION (SENDER SIDE)
+        // ========================================================================
+        // Encrypt encoded frames before they are sent over the network
+        // This happens at the encoded frame level, before SRTP encryption
+        if (this.supportsInsertableStreams && this.crypto && sender && sender.transform) {
+          this._setupSenderEncryption(sender, track.kind, peerId);
+        }
       }
     }
 
@@ -45,6 +86,15 @@ export class WebRTCManager {
       if (!e.streams || e.streams.length === 0) {
         log('[WEBRTC][renderer] ⚠️ No streams in track event');
         return;
+      }
+      
+      // ========================================================================
+      // INCOMING STREAM DECRYPTION (RECEIVER SIDE)
+      // ========================================================================
+      // Decrypt encoded frames after they are received from the network
+      // This happens at the encoded frame level, after SRTP decryption
+      if (this.supportsInsertableStreams && this.crypto && e.receiver && e.receiver.transform) {
+        this._setupReceiverDecryption(e.receiver, e.track.kind, peerId);
       }
       
       let videoEl = this.peers.get(peerId)?.videoEl;
@@ -201,6 +251,98 @@ export class WebRTCManager {
     return this._createPeerConnection(peerId, ({ type, candidate }) => {
       if (type === 'ice') onSignal && onSignal(candidate);
     });
+  }
+
+  /**
+   * ============================================================================
+   * SETUP SENDER ENCRYPTION (OUTGOING STREAMS)
+   * ============================================================================
+   * Creates an encoded transform that encrypts video/audio frames before transmission.
+   * The encrypted frames are then sent over WebRTC (which also applies SRTP encryption).
+   * This provides double encryption: our AES-256-GCM + WebRTC's SRTP.
+   */
+  _setupSenderEncryption(sender, trackKind, peerId) {
+    if (!this.crypto) return;
+
+    try {
+      const transformer = new TransformStream({
+        transform: async (encodedFrame, controller) => {
+          try {
+            // Get the encoded frame data
+            const data = new Uint8Array(encodedFrame.data);
+            
+            // Encrypt the frame data using AES-256-GCM
+            const encryptedData = await this.crypto.encryptBinary(data);
+            
+            // Create a new encoded frame with encrypted data
+            // Note: We need to preserve the frame structure
+            const encryptedFrame = Object.create(Object.getPrototypeOf(encodedFrame));
+            Object.assign(encryptedFrame, encodedFrame);
+            encryptedFrame.data = encryptedData.buffer;
+            
+            controller.enqueue(encryptedFrame);
+            
+            log(`[WEBRTC][renderer] 🔒 Encrypted ${trackKind} frame for ${peerId} (${data.length} → ${encryptedData.length} bytes)`);
+          } catch (e) {
+            console.error(`[WEBRTC][renderer] Encryption error for ${trackKind} frame:`, e);
+            // On error, pass through original frame (fallback)
+            controller.enqueue(encodedFrame);
+          }
+        }
+      });
+
+      // Apply the transform to the sender
+      sender.transform = transformer;
+      log(`[WEBRTC][renderer] ✅ Sender encryption enabled for ${trackKind} track to ${peerId}`);
+    } catch (e) {
+      console.error(`[WEBRTC][renderer] Failed to setup sender encryption:`, e);
+    }
+  }
+
+  /**
+   * ============================================================================
+   * SETUP RECEIVER DECRYPTION (INCOMING STREAMS)
+   * ============================================================================
+   * Creates an encoded transform that decrypts video/audio frames after reception.
+   * The frames are received from WebRTC (after SRTP decryption), then we decrypt
+   * our AES-256-GCM layer, and finally decode/display the frames.
+   */
+  _setupReceiverDecryption(receiver, trackKind, peerId) {
+    if (!this.crypto) return;
+
+    try {
+      const transformer = new TransformStream({
+        transform: async (encodedFrame, controller) => {
+          try {
+            // Get the encrypted frame data
+            const encryptedData = new Uint8Array(encodedFrame.data);
+            
+            // Decrypt the frame data using AES-256-GCM
+            const decryptedData = await this.crypto.decryptBinary(encryptedData);
+            
+            // Create a new encoded frame with decrypted data
+            // Note: We need to preserve the frame structure
+            const decryptedFrame = Object.create(Object.getPrototypeOf(encodedFrame));
+            Object.assign(decryptedFrame, encodedFrame);
+            decryptedFrame.data = decryptedData.buffer;
+            
+            controller.enqueue(decryptedFrame);
+            
+            log(`[WEBRTC][renderer] 🔓 Decrypted ${trackKind} frame from ${peerId} (${encryptedData.length} → ${decryptedData.length} bytes)`);
+          } catch (e) {
+            console.error(`[WEBRTC][renderer] Decryption error for ${trackKind} frame:`, e);
+            // On error, pass through original frame (fallback)
+            controller.enqueue(encodedFrame);
+          }
+        }
+      });
+
+      // Apply the transform to the receiver
+      receiver.transform = transformer;
+      log(`[WEBRTC][renderer] ✅ Receiver decryption enabled for ${trackKind} track from ${peerId}`);
+    } catch (e) {
+      console.error(`[WEBRTC][renderer] Failed to setup receiver decryption:`, e);
+    }
   }
 
   removePeer(peerId) {

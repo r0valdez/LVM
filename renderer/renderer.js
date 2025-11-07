@@ -20,7 +20,7 @@ let shownInvitations = new Set(); // Track shown invitations to prevent duplicat
 
 async function init() {
   clientName = await getDefaultRoomName();
-  rtc = new WebRTCManager({ gridEl: videoGrid });
+  rtc = new WebRTCManager({ gridEl: videoGrid, roomId: null }); // roomId will be set when joining/creating room
   log('[APP][renderer] init with name', clientName, 'clientId', clientId);
 
   // Initialize peer presence
@@ -273,6 +273,17 @@ async function onCreateRoom() {
   roomNameInput.disabled = true;
   exitBtn.disabled = false;
   
+  // ========================================================================
+  // INITIALIZE MEDIA STREAM ENCRYPTION
+  // ========================================================================
+  // Initialize CryptoManager with roomId for encrypting/decrypting video/audio frames
+  if (currentRoom.roomId) {
+    const { CryptoManager } = await import('./crypto.js');
+    rtc.crypto = new CryptoManager(currentRoom.roomId);
+    await rtc.crypto.init();
+    log('[FLOW][renderer][HOST] 🔐 Media encryption initialized for room', currentRoom.roomId);
+  }
+  
   await rtc.initLocal(clientId);
   
   // Host must also connect as WebSocket client to participate in WebRTC signaling
@@ -388,6 +399,17 @@ async function joinRoom(room) {
   currentRoom = { mode: 'join', roomId: room.roomId, roomName: room.roomName, hostIp: room.hostIp, wsPort: room.wsPort };
   createRoomBtn.disabled = true;
   exitBtn.disabled = false;
+
+  // ========================================================================
+  // INITIALIZE MEDIA STREAM ENCRYPTION
+  // ========================================================================
+  // Initialize CryptoManager with roomId for encrypting/decrypting video/audio frames
+  if (currentRoom.roomId) {
+    const { CryptoManager } = await import('./crypto.js');
+    rtc.crypto = new CryptoManager(currentRoom.roomId);
+    await rtc.crypto.init();
+    log('[FLOW][renderer] 🔐 Media encryption initialized for room', currentRoom.roomId);
+  }
 
   await rtc.initLocal(clientId);
 

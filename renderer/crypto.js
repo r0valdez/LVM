@@ -118,5 +118,73 @@ export class CryptoManager {
       throw e;
     }
   }
+
+  /**
+   * ============================================================================
+   * MEDIA STREAM ENCRYPTION METHODS
+   * ============================================================================
+   * These methods encrypt/decrypt binary data (video/audio frames) for WebRTC
+   * Insertable Streams API. They work with Uint8Array instead of strings.
+   */
+
+  /**
+   * Encrypt binary data (for video/audio frames)
+   * @param {Uint8Array} data - Binary data to encrypt
+   * @returns {Promise<Uint8Array>} Encrypted data with IV prepended
+   */
+  async encryptBinary(data) {
+    if (!this.key) await this.init();
+
+    try {
+      const iv = crypto.getRandomValues(new Uint8Array(this.ivLength));
+      const encrypted = await crypto.subtle.encrypt(
+        {
+          name: 'AES-GCM',
+          iv: iv
+        },
+        this.key,
+        data
+      );
+
+      // Combine IV and encrypted data
+      const combined = new Uint8Array(iv.length + encrypted.byteLength);
+      combined.set(iv, 0);
+      combined.set(new Uint8Array(encrypted), iv.length);
+
+      return combined;
+    } catch (e) {
+      console.error('[CRYPTO] Binary encryption error:', e);
+      throw e;
+    }
+  }
+
+  /**
+   * Decrypt binary data (for video/audio frames)
+   * @param {Uint8Array} encryptedData - Encrypted data with IV prepended
+   * @returns {Promise<Uint8Array>} Decrypted binary data
+   */
+  async decryptBinary(encryptedData) {
+    if (!this.key) await this.init();
+
+    try {
+      // Extract IV and encrypted data
+      const iv = encryptedData.slice(0, this.ivLength);
+      const encrypted = encryptedData.slice(this.ivLength);
+
+      const decrypted = await crypto.subtle.decrypt(
+        {
+          name: 'AES-GCM',
+          iv: iv
+        },
+        this.key,
+        encrypted
+      );
+
+      return new Uint8Array(decrypted);
+    } catch (e) {
+      console.error('[CRYPTO] Binary decryption error:', e);
+      throw e;
+    }
+  }
 }
 
