@@ -280,6 +280,7 @@ async function onCreateRoom() {
     url: `ws://${hostIp}:${host.wsPort}`,
     clientId,
     name: clientName,
+    roomId: host.roomId, // Pass roomId for encryption
     handlers: {
       onWelcome: async ({ participants }) => {
         log('[FLOW][renderer][HOST] onWelcome participants', participants.length);
@@ -291,9 +292,9 @@ async function onCreateRoom() {
             // Only create offer if host has lower clientId (deterministic rule for full mesh)
             if (clientId < p.clientId) {
               try {
-                const offer = await rtc.createOfferTo(p.clientId, (candidate) => signaling.sendIce(p.clientId, candidate));
+                const offer = await rtc.createOfferTo(p.clientId, async (candidate) => await signaling.sendIce(p.clientId, candidate));
                 if (offer) {
-                  signaling.sendOffer(p.clientId, offer);
+                  await signaling.sendOffer(p.clientId, offer);
                 }
               } catch (e) {
                 log('[FLOW][renderer][HOST] Error creating offer to', p.clientId, ':', e.message);
@@ -311,9 +312,9 @@ async function onCreateRoom() {
         if (!rtc.hasPeer(peerId)) {
           if (clientId < peerId) {
             try {
-              const offer = await rtc.createOfferTo(peerId, (candidate) => signaling.sendIce(peerId, candidate));
+              const offer = await rtc.createOfferTo(peerId, async (candidate) => await signaling.sendIce(peerId, candidate));
               if (offer) {
-                signaling.sendOffer(peerId, offer);
+                await signaling.sendOffer(peerId, offer);
               }
             } catch (e) {
               log('[FLOW][renderer][HOST] Error creating offer to', peerId, ':', e.message);
@@ -332,9 +333,9 @@ async function onCreateRoom() {
         if (msg.t === 'offer') {
           log('[FLOW][renderer][HOST] recv offer from', from);
           try {
-            const answer = await rtc.handleOffer(from, msg.sdp, (candidate) => signaling.sendIce(from, candidate));
+            const answer = await rtc.handleOffer(from, msg.sdp, async (candidate) => await signaling.sendIce(from, candidate));
             if (answer) {
-              signaling.sendAnswer(from, answer);
+              await signaling.sendAnswer(from, answer);
             }
           } catch (e) {
             log('[FLOW][renderer][HOST] Error handling offer from', from, ':', e.message);
@@ -394,6 +395,7 @@ async function joinRoom(room) {
     url: `ws://${room.hostIp}:${room.wsPort}`,
     clientId,
     name: clientName,
+    roomId: room.roomId, // Pass roomId for encryption
     handlers: {
       onWelcome: async ({ participants }) => {
         log('[FLOW][renderer] onWelcome participants', participants.length);
@@ -406,9 +408,9 @@ async function joinRoom(room) {
             if (clientId < p.clientId) {
               try {
                 log('[FLOW][renderer] Creating offer to existing participant', p.clientId);
-                const offer = await rtc.createOfferTo(p.clientId, (candidate) => signaling.sendIce(p.clientId, candidate));
+                const offer = await rtc.createOfferTo(p.clientId, async (candidate) => await signaling.sendIce(p.clientId, candidate));
                 if (offer) {
-                  signaling.sendOffer(p.clientId, offer);
+                  await signaling.sendOffer(p.clientId, offer);
                 }
               } catch (e) {
                 log('[FLOW][renderer] Error creating offer to', p.clientId, ':', e.message);
@@ -427,9 +429,9 @@ async function joinRoom(room) {
           if (clientId < peerId) {
             try {
               log('[FLOW][renderer] Creating offer to new participant', peerId);
-              const offer = await rtc.createOfferTo(peerId, (candidate) => signaling.sendIce(peerId, candidate));
+              const offer = await rtc.createOfferTo(peerId, async (candidate) => await signaling.sendIce(peerId, candidate));
               if (offer) {
-                signaling.sendOffer(peerId, offer);
+                await signaling.sendOffer(peerId, offer);
               }
             } catch (e) {
               log('[FLOW][renderer] Error creating offer to', peerId, ':', e.message);
@@ -448,9 +450,9 @@ async function joinRoom(room) {
         if (msg.t === 'offer') {
           log('[FLOW][renderer] recv offer from', from);
           try {
-            const answer = await rtc.handleOffer(from, msg.sdp, (candidate) => signaling.sendIce(from, candidate));
+            const answer = await rtc.handleOffer(from, msg.sdp, async (candidate) => await signaling.sendIce(from, candidate));
             if (answer) {
-              signaling.sendAnswer(from, answer);
+              await signaling.sendAnswer(from, answer);
             }
           } catch (e) {
             log('[FLOW][renderer] Error handling offer from', from, ':', e.message);
@@ -496,13 +498,13 @@ async function onExit() {
   log('[UI][renderer] Exit clicked, mode =', currentRoom.mode);
   if (currentRoom.mode === 'host') {
     // Host: close signaling connection and stop hosting
-    try { signaling && signaling.leave(); } catch {}
+    try { signaling && await signaling.leave(); } catch {}
     try { signaling && signaling.close(); } catch {}
     signaling = null;
     await Discovery.stopHosting();
   } else if (currentRoom.mode === 'join') {
     // Participant: just leave
-    try { signaling && signaling.leave(); } catch {}
+    try { signaling && await signaling.leave(); } catch {}
     try { signaling && signaling.close(); } catch {}
     signaling = null;
   }
