@@ -26,6 +26,9 @@ async function init() {
   // Initialize peer presence
   await window.lan.peerInit(clientId, clientName);
 
+  // Load and display license expiration
+  await loadLicenseExpiration();
+
   Discovery.onRooms(renderRooms);
   window.lan.onPeersUpdate(renderPeers);
   window.lan.onInvitationReceived(handleInvitationReceived);
@@ -40,6 +43,45 @@ async function init() {
       onCreateRoom();
     }
   });
+}
+
+async function loadLicenseExpiration() {
+  try {
+    const licenseInfo = await window.lan.checkLicense();
+    const expirationEl = document.getElementById('licenseExpiration');
+    
+    if (licenseInfo && licenseInfo.valid && licenseInfo.expirationDate) {
+      const expirationDate = new Date(licenseInfo.expirationDate);
+      const formattedDate = expirationDate.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+      });
+      
+      const daysRemaining = licenseInfo.daysRemaining || 0;
+      let statusClass = '';
+      let statusText = '';
+      
+      if (daysRemaining <= 7) {
+        statusClass = 'expiring-soon';
+        statusText = ' (Expiring soon)';
+      } else if (daysRemaining <= 30) {
+        statusClass = 'expiring-month';
+        statusText = '';
+      }
+      
+      expirationEl.innerHTML = `
+        <span class="expiration-label">Expires:</span>
+        <span class="expiration-date ${statusClass}">${formattedDate}${statusText}</span>
+      `;
+      expirationEl.style.display = 'block';
+    } else {
+      expirationEl.style.display = 'none';
+    }
+  } catch (error) {
+    console.error('[RENDERER] Error loading license expiration:', error);
+    document.getElementById('licenseExpiration').style.display = 'none';
+  }
 }
 
 function renderPeers(peers) {

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, dialog, clipboard } = require('electron');
 const path = require('path');
 const os = require('os');
 const dgram = require('dgram');
@@ -92,10 +92,36 @@ function createTray() {
 function updateTrayIcon() {
   if (!tray) return;
   
+  const deviceSerial = license.getDeviceSerial();
+  
   const contextMenu = Menu.buildFromTemplate([
     {
       label: isInMeeting ? 'In Meeting' : 'Not in Meeting',
       enabled: false
+    },
+    { type: 'separator' },
+    {
+      label: 'Device Serial',
+      click: () => {
+        console.log('[TRAY] Device serial requested');
+        dialog.showMessageBox(mainWindow || null, {
+          type: 'info',
+          title: 'Device Serial Number',
+          message: 'Device Serial Number',
+          detail: `Your device serial number is:\n\n${deviceSerial}\n\nUse this number to generate a license key.`,
+          buttons: ['Copy', 'OK'],
+          defaultId: 1,
+          cancelId: 1
+        }).then((result) => {
+          if (result.response === 0) {
+            // Copy to clipboard
+            clipboard.writeText(deviceSerial);
+            console.log('[TRAY] Device serial copied to clipboard');
+          }
+        }).catch((err) => {
+          console.error('[TRAY] Error showing device serial:', err);
+        });
+      }
     },
     { type: 'separator' },
     {
