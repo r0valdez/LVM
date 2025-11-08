@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LVM - License Activation</title>
+  <link rel="stylesheet" href="./license.css" />
+</head>
+<body>
+  <div class="license-container">
+    <div class="license-box">
+      <h1 class="license-title">LVM License Activation</h1>
+      
+      <div class="device-info">
+        <label class="device-label">Device Serial Number:</label>
+        <div class="device-serial-container">
+          <div class="device-serial" id="deviceSerial">Loading...</div>
+          <button class="copy-btn" id="copyBtn">Copy</button>
+        </div>
+      </div>
+      
+      <div class="license-input-section">
+        <label class="license-label" for="licenseInput">Enter License Key:</label>
+        <input 
+          type="text" 
+          id="licenseInput" 
+          class="license-input" 
+          placeholder="XXXXXX-XXXXXX-XXXXXX-XXXXXX"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <div class="license-error" id="licenseError"></div>
+      </div>
+      
+      <div class="license-actions">
+        <button id="activateBtn" class="activate-btn">Activate License</button>
+      </div>
+      
+      <div class="license-info" id="licenseInfo"></div>
+    </div>
+  </div>
+  <script type="module" src="./license.js"></script>
+</body>
+</html>
+

@@ -60,6 +60,27 @@ contextBridge.exposeInMainWorld('lan', {
     ipcRenderer.on('show-notification', listener);
     console.log('[PRELOAD] show-notification listener registered');
     return () => ipcRenderer.removeListener('show-notification', listener);
+  },
+  // License APIs
+  getDeviceSerial: () => {
+    console.log('[PRELOAD] getDeviceSerial');
+    return ipcRenderer.invoke('license:get-device-serial');
+  },
+  validateLicense: (licenseKey, deviceSerial) => {
+    console.log('[PRELOAD] validateLicense');
+    return ipcRenderer.invoke('license:validate', licenseKey, deviceSerial);
+  },
+  saveLicense: (licenseKey) => {
+    console.log('[PRELOAD] saveLicense');
+    return ipcRenderer.invoke('license:save', licenseKey);
+  },
+  checkLicense: () => {
+    console.log('[PRELOAD] checkLicense');
+    return ipcRenderer.invoke('license:check');
+  },
+  licenseActivated: () => {
+    console.log('[PRELOAD] licenseActivated');
+    return ipcRenderer.invoke('license:activated');
   }
 });
 

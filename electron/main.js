@@ -3,15 +3,18 @@ const path = require('path');
 const os = require('os');
 const dgram = require('dgram');
 const WebSocket = require('ws');
+const license = require('./license');
 
 const MULTICAST_ADDR = '239.255.255.250';
 const MULTICAST_PORT = 55555;
 const DEFAULT_WS_PORT = 57788;
 
 let mainWindow = null;
+let licenseWindow = null;
 let tray = null;
 let isInMeeting = false; // Track if user is in a meeting
 let currentRoomName = null; // Track current room name for peer announcements
+let isLicenseValid = false; // Track license validation status
 
 // Discovery state (rooms seen on LAN)
 // All peers (hosts and participants) share the same UDP multicast listener
@@ -63,7 +66,15 @@ function createTray() {
   
   tray.setToolTip('LVM');
   tray.on('click', () => {
-    if (mainWindow) {
+    if (!isLicenseValid) {
+      // If license not validated, show license window
+      if (licenseWindow && !licenseWindow.isDestroyed()) {
+        licenseWindow.show();
+        licenseWindow.focus();
+      } else {
+        createLicenseWindow();
+      }
+    } else if (mainWindow) {
       if (mainWindow.isVisible()) {
         mainWindow.hide();
       } else {
@@ -100,6 +111,42 @@ function updateTrayIcon() {
   tray.setContextMenu(contextMenu);
 }
 
+function createLicenseWindow() {
+  if (licenseWindow && !licenseWindow.isDestroyed()) {
+    licenseWindow.show();
+    licenseWindow.focus();
+    return;
+  }
+  
+  licenseWindow = new BrowserWindow({
+    width: 600,
+    height: 600,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    center: true,
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false
+    }
+  });
+
+  licenseWindow.loadFile(path.join(__dirname, '..', 'renderer', 'license.html'));
+  console.log('[MAIN] License window created');
+  
+  licenseWindow.on('closed', () => {
+    licenseWindow = null;
+    // If license window is closed without validation, quit the app
+    if (!isLicenseValid) {
+      console.log('[MAIN] License window closed without validation - quitting');
+      app.quit();
+    }
+  });
+}
+
 function createWindow() {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.show();
@@ -110,6 +157,9 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 900,
     height: 900,
+    resizable: false,
+    center: true,
+    autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -642,6 +692,35 @@ function sendInvitation(roomId, roomName, hostIp, wsPort, targetPeerIds) {
 ipcMain.handle('sys:get-hostname', () => os.hostname());
 ipcMain.handle('sys:get-local-ip', () => getLocalIp());
 
+// License IPC handlers
+ipcMain.handle('license:get-device-serial', () => {
+  return license.getDeviceSerial();
+});
+
+ipcMain.handle('license:validate', (e, licenseKey, deviceSerial) => {
+  return license.validateLicenseKey(licenseKey, deviceSerial);
+});
+
+ipcMain.handle('license:save', (e, licenseKey) => {
+  return license.saveLicense(licenseKey);
+});
+
+ipcMain.handle('license:check', () => {
+  return license.checkLicense();
+});
+
+ipcMain.handle('license:activated', () => {
+  console.log('[MAIN] License activated - closing license window and opening main window');
+  isLicenseValid = true;
+  if (licenseWindow && !licenseWindow.isDestroyed()) {
+    licenseWindow.close();
+  }
+  createWindow();
+  createTray();
+  startDiscovery();
+  return { ok: true };
+});
+
 ipcMain.handle('peer:init', (e, { peerId, peerName }) => {
   console.log('[IPC] peer:init', peerId, peerName);
   startPeerAnnouncing(peerId, peerName);
@@ -712,15 +791,34 @@ ipcMain.handle('meeting:leave', () => {
 });
 
 app.whenReady().then(() => {
-  createWindow();
-  createTray();
-  // Start discovery immediately at app launch - all peers listen for room announcements
-  // This happens before any room is created, ensuring peers can discover rooms at any time
-  startDiscovery();
-  console.log('[APP] ready - discovery socket active');
+  // Check license first
+  const licenseCheck = license.checkLicense();
+  
+  if (licenseCheck.valid) {
+    // License is valid, proceed to main window
+    console.log('[APP] License valid - opening main window');
+    isLicenseValid = true;
+    createWindow();
+    createTray();
+    startDiscovery();
+    console.log('[APP] ready - discovery socket active');
+  } else {
+    // License not valid, show license window
+    console.log('[APP] License not valid - showing license window');
+    isLicenseValid = false;
+    createLicenseWindow();
+  }
 
   app.on('activate', () => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
+    if (!isLicenseValid) {
+      // If license not validated, show license window
+      if (licenseWindow && !licenseWindow.isDestroyed()) {
+        licenseWindow.show();
+        licenseWindow.focus();
+      } else {
+        createLicenseWindow();
+      }
+    } else if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.show();
       mainWindow.focus();
     } else {
