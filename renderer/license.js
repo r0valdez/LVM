@@ -87,10 +87,24 @@ async function activateLicense() {
       // License is valid
       licenseInput.classList.add('success');
       infoEl.className = 'license-info success';
+      
+      // Format expiration info
+      let expirationText = '';
+      if (result.expirationDate) {
+        const expirationDate = new Date(result.expirationDate);
+        const formattedDate = expirationDate.toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric'
+        });
+        expirationText = `Expires: ${formattedDate}<br>Days Remaining: ${result.daysRemaining}`;
+      } else {
+        expirationText = 'Expires: No Expire';
+      }
+      
       infoEl.innerHTML = `
         <strong>License Activated Successfully!</strong><br>
-        Expires: ${new Date(result.expirationDate).toLocaleDateString()}<br>
-        Days Remaining: ${result.daysRemaining}
+        ${expirationText}
       `;
       
       // Save license

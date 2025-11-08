@@ -50,30 +50,39 @@ async function loadLicenseExpiration() {
     const licenseInfo = await window.lan.checkLicense();
     const expirationEl = document.getElementById('licenseExpiration');
     
-    if (licenseInfo && licenseInfo.valid && licenseInfo.expirationDate) {
-      const expirationDate = new Date(licenseInfo.expirationDate);
-      const formattedDate = expirationDate.toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric'
-      });
-      
-      const daysRemaining = licenseInfo.daysRemaining || 0;
-      let statusClass = '';
-      let statusText = '';
-      
-      if (daysRemaining <= 7) {
-        statusClass = 'expiring-soon';
-        statusText = ' (Expiring soon)';
-      } else if (daysRemaining <= 30) {
-        statusClass = 'expiring-month';
-        statusText = '';
+    if (licenseInfo && licenseInfo.valid) {
+      if (licenseInfo.expirationDate) {
+        // Has expiration date
+        const expirationDate = new Date(licenseInfo.expirationDate);
+        const formattedDate = expirationDate.toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric'
+        });
+        
+        const daysRemaining = licenseInfo.daysRemaining || 0;
+        let statusClass = '';
+        let statusText = '';
+        
+        if (daysRemaining <= 7) {
+          statusClass = 'expiring-soon';
+          statusText = ' (Expiring soon)';
+        } else if (daysRemaining <= 30) {
+          statusClass = 'expiring-month';
+          statusText = '';
+        }
+        
+        expirationEl.innerHTML = `
+          <span class="expiration-label">Expires:</span>
+          <span class="expiration-date ${statusClass}">${formattedDate}${statusText}</span>
+        `;
+      } else {
+        // No expiration
+        expirationEl.innerHTML = `
+          <span class="expiration-label">Expires:</span>
+          <span class="expiration-date">No Expire</span>
+        `;
       }
-      
-      expirationEl.innerHTML = `
-        <span class="expiration-label">Expires:</span>
-        <span class="expiration-date ${statusClass}">${formattedDate}${statusText}</span>
-      `;
       expirationEl.style.display = 'block';
     } else {
       expirationEl.style.display = 'none';

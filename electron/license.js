@@ -54,13 +54,15 @@ function getDeviceSerial() {
 
 /**
  * Generate license key from device serial and expiration date
+ * @param {string} deviceSerial - Device serial number
+ * @param {Date|null} expirationDate - Expiration date, or null for no expiration
  */
 function generateLicenseKey(deviceSerial, expirationDate) {
   try {
     // Create license data
     const licenseData = {
       deviceSerial,
-      expirationDate: expirationDate.toISOString(),
+      expirationDate: expirationDate ? expirationDate.toISOString() : null,
       version: '1.0'
     };
     
@@ -159,20 +161,28 @@ function validateLicenseKey(licenseKey, deviceSerial) {
       return { valid: false, error: 'License does not match this device' };
     }
     
-    // Check expiration
-    const expirationDate = new Date(licenseData.expirationDate);
-    const now = new Date();
+    // Check expiration (null means no expiration)
+    let expirationDate = null;
+    let daysRemaining = null;
     
-    if (now > expirationDate) {
-      console.error('[LICENSE] License expired');
-      return { valid: false, error: 'License has expired', expirationDate };
+    if (licenseData.expirationDate) {
+      expirationDate = new Date(licenseData.expirationDate);
+      const now = new Date();
+      
+      if (now > expirationDate) {
+        console.error('[LICENSE] License expired');
+        return { valid: false, error: 'License has expired', expirationDate };
+      }
+      
+      daysRemaining = Math.ceil((expirationDate - now) / (1000 * 60 * 60 * 24));
     }
     
     // License is valid
     return {
       valid: true,
       expirationDate,
-      daysRemaining: Math.ceil((expirationDate - now) / (1000 * 60 * 60 * 24))
+      daysRemaining,
+      hasExpiration: expirationDate !== null
     };
   } catch (error) {
     console.error('[LICENSE] Error validating license:', error);
