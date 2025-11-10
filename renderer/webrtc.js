@@ -10,6 +10,8 @@ export class WebRTCManager {
     this.clientId = null;
     this.crypto = roomId ? new CryptoManager(roomId) : null;
     this.supportsInsertableStreams = this._checkInsertableStreamsSupport();
+    this.expandedVideo = null; // Currently expanded video element
+    this._setupVideoExpansion();
   }
 
   /**
@@ -45,6 +47,7 @@ export class WebRTCManager {
       vid.playsInline = true;
       vid.srcObject = this.localStream;
       vid.dataset.peer = 'self';
+      this._setupVideoClickHandler(vid);
       this.gridEl.prepend(vid);
       this.selfVideo = vid;
       log('[WEBRTC][renderer] local stream ready');
@@ -109,6 +112,7 @@ export class WebRTCManager {
         videoEl.onerror = (err) => {
           log('[WEBRTC][renderer] ❌ Video element error for', peerId, ':', err);
         };
+        this._setupVideoClickHandler(videoEl);
         this.gridEl.appendChild(videoEl);
         const rec = this.peers.get(peerId) || { pc };
         rec.videoEl = videoEl;
@@ -354,8 +358,72 @@ export class WebRTCManager {
     this.peers.delete(peerId);
   }
 
+  /**
+   * Setup video expansion functionality
+   */
+  _setupVideoExpansion() {
+    // Add exit button for expanded view
+    const exitBtn = document.createElement('button');
+    exitBtn.className = 'video-expand-exit';
+    exitBtn.innerHTML = '✕';
+    exitBtn.title = 'Exit expanded view (or click video again)';
+    exitBtn.style.display = 'none';
+    exitBtn.onclick = (e) => {
+      e.stopPropagation();
+      this._collapseVideo();
+    };
+    this.gridEl.appendChild(exitBtn);
+    this.exitBtn = exitBtn;
+  }
+
+  /**
+   * Setup click handler for video element
+   */
+  _setupVideoClickHandler(videoEl) {
+    videoEl.style.cursor = 'pointer';
+    videoEl.onclick = () => {
+      if (this.expandedVideo === videoEl) {
+        // Clicking expanded video collapses it
+        this._collapseVideo();
+      } else {
+        // Expand this video
+        this._expandVideo(videoEl);
+      }
+    };
+  }
+
+  /**
+   * Expand a video to fill the grid
+   */
+  _expandVideo(videoEl) {
+    // Collapse previous expanded video if any
+    if (this.expandedVideo && this.expandedVideo !== videoEl) {
+      this._collapseVideo();
+    }
+
+    this.expandedVideo = videoEl;
+    this.gridEl.classList.add('expanded');
+    videoEl.classList.add('expanded');
+    this.exitBtn.style.display = 'block';
+    log('[WEBRTC][renderer] Expanded video:', videoEl.dataset.peer);
+  }
+
+  /**
+   * Collapse expanded video back to grid
+   */
+  _collapseVideo() {
+    if (!this.expandedVideo) return;
+
+    this.gridEl.classList.remove('expanded');
+    this.expandedVideo.classList.remove('expanded');
+    this.expandedVideo = null;
+    this.exitBtn.style.display = 'none';
+    log('[WEBRTC][renderer] Collapsed expanded video');
+  }
+
   cleanup() {
     log('[WEBRTC][renderer] cleanup');
+    this._collapseVideo();
     for (const [peerId] of this.peers) this.removePeer(peerId);
     if (this.selfVideo && this.selfVideo.parentNode) this.selfVideo.parentNode.removeChild(this.selfVideo);
     this.selfVideo = null;
