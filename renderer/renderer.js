@@ -29,6 +29,9 @@ async function init() {
   // Load and display license expiration
   await loadLicenseExpiration();
 
+  // Load saved room name
+  loadSavedRoomName();
+
   Discovery.onRooms(renderRooms);
   window.lan.onPeersUpdate(renderPeers);
   window.lan.onInvitationReceived(handleInvitationReceived);
@@ -43,6 +46,32 @@ async function init() {
       onCreateRoom();
     }
   });
+
+  // Save room name to localStorage whenever it changes
+  roomNameInput.addEventListener('input', (e) => {
+    const roomName = e.target.value.trim();
+    if (roomName) {
+      localStorage.setItem('lvm-room-name', roomName);
+      log('[UI][renderer] Saved room name to localStorage:', roomName);
+    } else {
+      localStorage.removeItem('lvm-room-name');
+    }
+  });
+}
+
+/**
+ * Load saved room name from localStorage
+ */
+function loadSavedRoomName() {
+  try {
+    const savedRoomName = localStorage.getItem('lvm-room-name');
+    if (savedRoomName) {
+      roomNameInput.value = savedRoomName;
+      log('[UI][renderer] Loaded saved room name from localStorage:', savedRoomName);
+    }
+  } catch (error) {
+    console.error('[UI][renderer] Error loading saved room name:', error);
+  }
 }
 
 async function loadLicenseExpiration() {
