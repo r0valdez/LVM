@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, dialog, clipboard } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, dialog, clipboard, screen } = require('electron');
 const path = require('path');
 const os = require('os');
 const dgram = require('dgram');
@@ -180,10 +180,14 @@ function createWindow() {
     return;
   }
   
+  // Get the primary display's work area size (accounts for taskbars, etc.)
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width, height } = primaryDisplay.workAreaSize;
+  
   mainWindow = new BrowserWindow({
-    width: 900,
-    height: 900,
-    resizable: false,
+    width: width,
+    height: height,
+    resizable: true,
     center: true,
     autoHideMenuBar: true,
     webPreferences: {
